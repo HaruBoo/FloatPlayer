@@ -10,7 +10,6 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 if !viewModel.isUIHidden {
                     topBar
-                        .background(barBackground)
                         .background(DragHandle())
 
                     Divider().opacity(0.3)
@@ -34,9 +33,11 @@ struct ContentView: View {
                     Divider().opacity(0.3)
 
                     bottomBar
-                        .background(barBackground)
                 }
             }
+            // バーごとに背景を分けず、1枚のマテリアルにして段差をなくす
+            .background(.regularMaterial)
+            .opacity(viewModel.windowOpacity)
 
             if viewModel.isUIHidden {
                 // UIを隠している間もウィンドウを動かせるように、上端に細い帯だけ残す
@@ -46,17 +47,6 @@ struct ContentView: View {
                     .background(DragHandle())
             }
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-        )
-    }
-
-    // 上下バーの背景。映像/写真自体は薄くせず、バーの背景だけスライダーで透明度を変える
-    private var barBackground: some View {
-        Rectangle()
-            .fill(.regularMaterial)
-            .opacity(viewModel.windowOpacity)
     }
 
     private var topBar: some View {
@@ -70,12 +60,6 @@ struct ContentView: View {
             .frame(width: 200)
 
             Spacer(minLength: 20)
-
-            Button(action: { NSApplication.shared.terminate(nil) }) {
-                Image(systemName: "xmark.circle.fill")
-            }
-            .buttonStyle(.plain)
-            .help("終了")
         }
         .padding(8)
     }
@@ -130,16 +114,25 @@ struct ContentView: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+                    .overlay(alignment: .bottom) {
+                        HStack {
+                            Button("写真を選択") { viewModel.pickPhoto() }
+                            Button("貼り付け") { viewModel.pastePhotoFromClipboard() }
+                        }
+                        .padding(8)
+                    }
             } else {
-                hint(text: "「写真を選択」でスクリーンショットや写真を選ぶか、\nここにファイルをドラッグ&ドロップ、\nまたはコピーした画像を「貼り付け」してください")
+                // 説明文とボタンが重ならないよう縦に並べ、中央に配置する
+                VStack(spacing: 16) {
+                    hint(text: "「写真を選択」でスクリーンショットや写真を選ぶか、\nここにファイルをドラッグ&ドロップ、\nまたはコピーした画像を「貼り付け」してください")
+                    HStack {
+                        Button("写真を選択") { viewModel.pickPhoto() }
+                        Button("貼り付け") { viewModel.pastePhotoFromClipboard() }
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        }
-        .overlay(alignment: .bottom) {
-            HStack {
-                Button("写真を選択") { viewModel.pickPhoto() }
-                Button("貼り付け") { viewModel.pastePhotoFromClipboard() }
-            }
-            .padding(8)
         }
     }
 
@@ -147,22 +140,27 @@ struct ContentView: View {
         Group {
             if viewModel.videoURL != nil {
                 VideoPlayer(player: viewModel.player)
+                    .overlay(alignment: .bottom) {
+                        Button("動画を選択") { viewModel.pickVideo() }
+                            .padding(8)
+                    }
             } else {
-                hint(text: "「動画を選択」で保存済みの動画ファイルを選ぶか、\nここにファイルをドラッグ&ドロップしてください")
+                VStack(spacing: 16) {
+                    hint(text: "「動画を選択」で保存済みの動画ファイルを選ぶか、\nここにファイルをドラッグ&ドロップしてください")
+                    Button("動画を選択") { viewModel.pickVideo() }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        }
-        .overlay(alignment: .bottom) {
-            Button("動画を選択") { viewModel.pickVideo() }
-                .padding(8)
         }
     }
 
     private func hint(text: String) -> some View {
         Text(text)
             .multilineTextAlignment(.center)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding()
+            .font(.callout)
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var bottomBar: some View {

@@ -66,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupPanel() {
         let hosting = NSHostingView(rootView: ContentView(viewModel: viewModel))
+        // NSHostingViewは既定でSwiftUI側の理想サイズ(fittingSize)に合わせて
+        // ウィンドウ自体をリサイズしてしまう。ウィンドウサイズは自分たちで管理したいので無効化する
+        hosting.sizingOptions = []
         // 透明ウィンドウは上下の角が不揃いに見えることがあるため、
         // コンテンツ自体を四隅そろえて丸くクリップする
         hosting.wantsLayer = true
@@ -73,8 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hosting.layer?.masksToBounds = true
 
         let newPanel = NSPanel(
-            contentRect: NSRect(x: 200, y: 200, width: 420, height: 340),
-            styleMask: [.titled, .resizable, .nonactivatingPanel, .fullSizeContentView],
+            contentRect: NSRect(x: 200, y: 200, width: 420, height: 280),
+            // .closable/.miniaturizableを付けないと赤(閉じる)・黄(しまう)の
+            // トラフィックライトボタンが表示だけされて無効化(グレーアウト)されてしまう
+            styleMask: [.titled, .resizable, .closable, .miniaturizable, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -86,17 +91,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         newPanel.isOpaque = false
         newPanel.backgroundColor = .clear
         newPanel.hasShadow = true
-        newPanel.minSize = NSSize(width: 260, height: 200)
+        newPanel.minSize = NSSize(width: 260, height: 180)
         newPanel.contentView = hosting
         newPanel.isReleasedWhenClosed = false
         // NSPanelは既定でhidesOnDeactivate=trueのため、他アプリにフォーカスが移ると
         // パネルごと隠れてしまう。常時フロートさせたいのでfalseにする
         newPanel.hidesOnDeactivate = false
         newPanel.becomesKeyOnlyIfNeeded = false
+        // .regularポリシーだと既定でウィンドウの状態復元が働き、
+        // 手動でリサイズした過去のフレームを次回起動時に引きずることがあるため無効化する
+        newPanel.isRestorable = false
 
         newPanel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         panel = newPanel
+
+        observeAppActivation()
+    }
+
+    // 自分がアクティブな間だけ最前面(.floating)に浮かせ、
+    // 他のアプリを使っている間はその後ろに回るようにする(.normal)。
+    // FloatPlayer自体をクリックすればまた最前面に戻る。
+    private func observeAppActivation() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleAppActivation(_:)),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleAppActivation(_ note: Notification) {
+        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+        panel.level = app.processIdentifier == ProcessInfo.processInfo.processIdentifier ? .floating : .normal
     }
 
     private func setupStatusItem() {
@@ -198,6 +225,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showPanel() {
+        panel.level = .floating
+        NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
 

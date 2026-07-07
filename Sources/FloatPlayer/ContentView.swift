@@ -10,6 +10,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 if !viewModel.isUIHidden {
                     topBar
+                        .background(barBackground)
                         .background(DragHandle())
 
                     Divider().opacity(0.3)
@@ -33,6 +34,7 @@ struct ContentView: View {
                     Divider().opacity(0.3)
 
                     bottomBar
+                        .background(barBackground)
                 }
             }
 
@@ -44,11 +46,17 @@ struct ContentView: View {
                     .background(DragHandle())
             }
         }
-        .background(.regularMaterial) // 既定では見やすいように半透明マテリアルの背景にする
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
         )
+    }
+
+    // 上下バーの背景。映像/写真自体は薄くせず、バーの背景だけスライダーで透明度を変える
+    private var barBackground: some View {
+        Rectangle()
+            .fill(.regularMaterial)
+            .opacity(viewModel.windowOpacity)
     }
 
     private var topBar: some View {
@@ -123,12 +131,15 @@ struct ContentView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
             } else {
-                hint(text: "「写真を選択」でスクリーンショットや写真を選ぶか、\nここにファイルをドラッグ&ドロップしてください")
+                hint(text: "「写真を選択」でスクリーンショットや写真を選ぶか、\nここにファイルをドラッグ&ドロップ、\nまたはコピーした画像を「貼り付け」してください")
             }
         }
         .overlay(alignment: .bottom) {
-            Button("写真を選択") { viewModel.pickPhoto() }
-                .padding(8)
+            HStack {
+                Button("写真を選択") { viewModel.pickPhoto() }
+                Button("貼り付け") { viewModel.pastePhotoFromClipboard() }
+            }
+            .padding(8)
         }
     }
 

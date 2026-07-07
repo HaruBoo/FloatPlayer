@@ -156,6 +156,13 @@ final class MediaViewModel: ObservableObject {
         }
     }
 
+    /// 部分スクリーンショット(Cmd+Shift+Ctrl+4など)をファイル保存なしでそのまま貼り付ける
+    func pastePhotoFromClipboard() {
+        guard let image = NSImage(pasteboard: .general) else { return }
+        photoImage = image
+        mode = .photo
+    }
+
     func pickVideo() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]

@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.disableAutomaticTermination("FloatPlayerは常駐して浮遊表示を続ける必要があるため")
         ProcessInfo.processInfo.disableSuddenTermination()
 
-        NSApp.mainMenu = Self.buildMainMenu()
+        NSApp.mainMenu = buildMainMenu()
         setupPanel()
         setupStatusItem()
         bindViewModel()
@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // メニューバーを持たないアクセサリアプリのままだと、Cmd+C/V/X/Aなどの
     // 標準編集ショートカットがテキストフィールドまで正しくルーティングされない。
     // 表示はされない最小限のEditメニューを用意し、キー等価物の解決先を与える。
-    private static func buildMainMenu() -> NSMenu {
+    private func buildMainMenu() -> NSMenu {
         let mainMenu = NSMenu()
 
         let appMenuItem = NSMenuItem()
@@ -54,6 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "コピー", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "ペースト", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "すべて選択", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
+        // Cmd+Vはテキスト入力欄用なので、写真の貼り付けは別のショートカットにする
+        let pastePhotoItem = NSMenuItem(title: "スクリーンショットを貼り付け", action: #selector(pastePhoto), keyEquivalent: "v")
+        pastePhotoItem.keyEquivalentModifierMask = [.command, .shift]
+        pastePhotoItem.target = self
+        editMenu.addItem(pastePhotoItem)
 
         return mainMenu
     }
@@ -120,6 +126,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
+        // Cmd+Vはテキスト入力欄用に使っているため、写真の貼り付けは別のショートカットにする
+        let pastePhotoItem = NSMenuItem(title: "スクリーンショットを貼り付け", action: #selector(pastePhoto), keyEquivalent: "v")
+        pastePhotoItem.keyEquivalentModifierMask = [.command, .shift]
+        pastePhotoItem.target = self
+        menu.addItem(pastePhotoItem)
+
+        menu.addItem(.separator())
+
         let quitItem = NSMenuItem(title: "終了", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -129,12 +143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bindViewModel() {
-        viewModel.$windowOpacity
-            .receive(on: RunLoop.main)
-            .sink { [weak self] value in
-                self?.panel.alphaValue = value
-            }
-            .store(in: &cancellables)
+        // windowOpacityは上下バーの背景(ContentView側)だけに使う。
+        // 映像/写真自体まで薄くしたくないので、パネル全体のalphaValueは常に1.0のまま。
 
         viewModel.$isClickThrough
             .receive(on: RunLoop.main)
@@ -189,6 +199,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showPanel() {
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func pastePhoto() {
+        viewModel.pastePhotoFromClipboard()
     }
 
     // クリックスルー中はパネル自身のトグルUIも押せなくなるため、

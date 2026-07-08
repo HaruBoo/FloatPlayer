@@ -342,6 +342,70 @@ DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
   </p>
 </div>
 
+<div class="box bug">
+  <span class="box-title">実際に踏んだバグ: 隠しファイル名で一瞬だけ現れてリネームされる</span>
+  <p>
+    スクリーンショットは書き込み中、<code>.</code>で始まる一時的な隠しファイル名(例:
+    <code>.png</code>)で先に現れてから、最終的なファイル名にリネームされることがある。
+    差分検出がこの隠しファイルを「新しいファイル」として拾ってしまうと、0.3秒後に読みにいった時点では
+    既にリネームされていてパスが存在せず、読み込みに失敗する。
+  </p>
+<pre><code>// スクリーンショットは書き込み中、"."で始まる一時的な隠しファイル名で
+// 現れてから最終的なファイル名にリネームされることがあるため対象から除く
+return Set(names.filter {
+    !$0.hasPrefix(".") && imageExtensions.contains(($0 as NSString).pathExtension.lowercased())
+})</code></pre>
+  <p>
+    隠しファイルを最初から一覧に含めないようにするだけで、最終的な(リネーム後の)ファイル名だけが
+    「新しいファイル」として検出されるようになり、競合状態そのものが起きなくなる。
+  </p>
+</div>
+
+<h2>4.5. 機能: クリップボードのみのスクリーンショットを拾う</h2>
+<p>
+  Cmd+Ctrl+Shift+4のような「ファイル保存を伴わないスクリーンショット」は、上記のフォルダ監視では
+  検知できない。そこで<code>ClipboardImageWatcher</code>は<code>NSPasteboard.general.changeCount</code>を
+  0.5秒間隔でポーリングし、前回と値が変わっていたら「クリップボードの中身が変わった」とみなす。
+</p>
+<pre><code>timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+    Task { @MainActor in self?.checkClipboard() }
+}
+
+private func checkClipboard() {
+    let pasteboard = NSPasteboard.general
+    guard pasteboard.changeCount != lastChangeCount else { return }
+    lastChangeCount = pasteboard.changeCount
+    guard let image = NSImage(pasteboard: pasteboard) else { return }
+    onNewImage(image)
+}</code></pre>
+<p>
+  macOSには「クリップボードの中身がスクリーンショット由来か」を判別する公開APIが無いため、
+  この仕組みは<b>新しい画像がコピーされた時点で全て拾う</b>。通常の画像コピー操作にも反応してしまうため、
+  既定はオフにして、メニューバーから明示的に有効化する追加機能として提供している。
+</p>
+
+<div class="box bug">
+  <span class="box-title">実際に踏んだバグ: ファイルをコピーしただけなのに画像が浮く</span>
+  <p>
+    Finderでファイル(画像でなくても)をコピーすると、<code>NSPasteboard</code>にはファイルURLと同時に、
+    そのファイルの<b>アイコン画像</b>がTIFF形式で一緒に乗ることがある。<code>NSImage(pasteboard:)</code>は
+    「画像として解釈できるものが乗っているか」しか見ないため、このアイコンを「新しくコピーされた画像」と
+    誤認してフローティング表示してしまっていた。
+  </p>
+<pre><code>// Finderでファイルをコピーした時、そのファイルのアイコン画像がNSImage(pasteboard:)で
+// 拾われてフローティング表示されてしまうことがあるため、ファイルURLがある場合は
+// (通常のファイルコピーとみなして)画像コピーとして扱わない
+let hasFileURL = !(pasteboard.readObjects(forClasses: [NSURL.self], options: nil) ?? []).isEmpty
+guard !hasFileURL, let image = NSImage(pasteboard: pasteboard) else { return }
+onNewImage(image)</code></pre>
+  <p>
+    「画像かどうか」ではなく「ファイル参照が乗っているかどうか」を先に確認することで、ファイルコピーと
+    画像コピーを区別できる。同じ理由で、明示的な「貼り付け」ボタン側(<code>pastePhotoFromClipboard()</code>)にも
+    同様の対策を入れ、ファイルURLがあって、かつそれが画像ファイルであれば、アイコンではなく実体のファイルを
+    読み込むようにした。
+  </p>
+</div>
+
 <h2>5. 機能: 透明度スライダーを「映像用」と「UI用」に分ける</h2>
 <p>
   FloatPlayerには透明度スライダーが2つある。<code>mediaOpacity</code>はYouTube/写真/動画そのものの透明度、
@@ -403,6 +467,7 @@ if viewModel.currentVideoID != nil {
 <tr><td>NSHostingView(AppKit→SwiftUI)</td><td>AppDelegate.setupPanel</td></tr>
 <tr><td>NSViewRepresentable + Coordinator(SwiftUI→AppKit)</td><td>YouTubeWebView.swift</td></tr>
 <tr><td>DispatchSource.makeFileSystemObjectSource</td><td>ScreenshotWatcher.swift</td></tr>
+<tr><td>NSPasteboard.changeCountによるポーリング監視</td><td>ScreenshotWatcher.swift(ClipboardImageWatcher)</td></tr>
 <tr><td>opacity修飾子の階層設計(mediaOpacity / uiOpacity)</td><td>ContentView.swift, MediaViewModel.swift</td></tr>
 </table></div>
 

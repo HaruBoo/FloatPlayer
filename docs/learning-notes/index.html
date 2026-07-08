@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>学習ノート - FloatPlayer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top-nav"><div class="layout">
+  <a href="index.html" class="active">学習ノート目次</a>
+  <a href="01_swift_appkit_fundamentals.html">Swift基礎編</a>
+  <a href="02_nswindow_deep_dive.html">NSWindow/NSPanel編</a>
+  <a href="03_webkit_youtube_api.html">WebKit/YouTube API編</a>
+  <a href="04_debugging_techniques.html">デバッグ技法編</a>
+</div></nav>
+
+<header class="page-header">
+  <div class="layout">
+    <h1>FloatPlayer 学習ノート</h1>
+    <p>macOS用フローティングプレイヤーを作りながら学んだ、Swift・AppKit・SwiftUI・WebKitの実践知識まとめです。一般的な入門ではなく、実際にこのアプリで使い、そして実際に踏んだバグだけを扱います。</p>
+  </div>
+</header>
+
+<div class="layout">
+<main>
+
+<h2 style="margin-top:0;">FloatPlayerとは</h2>
+<p>
+  <b>FloatPlayer</b>は、macOSの画面上に常に最前面で浮かぶ、小さなフローティングプレイヤーです。
+  YouTube動画・写真(スクリーンショット等)・保存済みの動画ファイルを、他のアプリで作業しながら
+  同時に見続けられるようにするためのユーティリティアプリです。
+</p>
+<ul>
+  <li><b>YouTube再生</b> — 公式のIFrame Player APIを使って埋め込み再生(ダウンロードはしません)。メニューバーからチャプター一覧にジャンプできます</li>
+  <li><b>写真/スクリーンショット表示</b> — ファイル選択・ドラッグ&ドロップ・クリップボード貼り付けに対応</li>
+  <li><b>動画ファイルのループ再生</b> — 保存済みの動画をBGV(バックグラウンドビデオ)のように流せます</li>
+  <li><b>透明度の調整</b> — 「映像/写真/動画」と「UI(ボタン類)」を別々のスライダーで透明にできます</li>
+  <li><b>スクリーンショットの自動フローティング</b> — Cmd+Shift+4などで撮った直後、UIなしの画像だけのウィンドウが自動で浮かび上がり、ドラッグで動かせます</li>
+  <li><b>常駐・省スペース設計</b> — メニューバーのアイコンから表示/非表示・クリックスルー・終了などを操作。自分の作業を邪魔しないよう、他のアプリを使っている間は自動的に背面へ回ります</li>
+</ul>
+<p>
+  Xcodeを使わず、Swiftのコマンドラインツールと<code>build_app.sh</code>だけでビルドできる、
+  ネイティブのSwift/AppKit/SwiftUIアプリです。以下の学習ノートでは、このアプリを作る過程で
+  実際に使った技術と、実際に踏んだバグをまとめています。
+</p>
+
+<h2>この学習ノートについて</h2>
+<p>
+  FloatPlayerはXcodeを使わず、Swift Package Managerだけで作ったmacOSアプリ。
+  「YouTube/写真/動画を常に最前面のウィンドウで再生する」という単純な目的のアプリだが、
+  実装の過程で<b>ウィンドウが画面いっぱいまで巨大化する</b>、<b>入力しようとするとアプリごと消える</b>、
+  <b>YouTube埋め込みがエラーになる</b>など、AppKit特有のかなり手強いバグに何度も遭遇した。
+  この学習ノートは、そうした<b>実際に踏んだバグとその直し方</b>を中心に記録している。
+</p>
+
+<div class="box tip">
+  <span class="box-title">Tips: このアプリの技術構成</span>
+  <p>
+    Swift 6 / Swift Package Manager(Xcode不要) / AppKit(NSPanel・NSStatusItem) / SwiftUI(画面のUI) /
+    WebKit(WKWebViewでYouTube再生) / AVFoundation(ローカル動画再生) / Combine(状態管理) /
+    URLSession(YouTube Data API) という組み合わせ。GUIアプリとしては小さいが、
+    「常に最前面に浮くウィンドウ」を作ろうとすると必然的にAppKitの深い部分に触れることになる。
+  </p>
+</div>
+
+<div class="toc-grid">
+  <a class="toc-card" href="01_swift_appkit_fundamentals.html">
+    <div class="num">Swift基礎編</div>
+    <h3>Swiftの言語機能とAppKitの土台</h3>
+    <p>@MainActor、Combineの@Published、NSApplicationDelegate、SwiftUIとAppKitの橋渡し(NSHostingView/NSViewRepresentable)</p>
+  </a>
+
+  <a class="toc-card" href="02_nswindow_deep_dive.html">
+    <div class="num">NSWindow/NSPanel編</div>
+    <h3>「消えるウィンドウ」「巨大化するウィンドウ」の正体</h3>
+    <p>hidesOnDeactivate、自動終了(Automatic/Sudden Termination)、NSHostingViewが引き起こすウィンドウ肥大化バグ、ウィンドウレベルの制御</p>
+  </a>
+
+  <a class="toc-card" href="03_webkit_youtube_api.html">
+    <div class="num">WebKit/YouTube API編</div>
+    <h3>WKWebViewでYouTubeを埋め込む</h3>
+    <p>iframe埋め込みの仕組みと「動画プレーヤーの設定エラー」、YouTube IFrame Player APIによるJS制御、Data APIでのチャプター抽出</p>
+  </a>
+
+  <a class="toc-card" href="04_debugging_techniques.html">
+    <div class="num">デバッグ技法編</div>
+    <h3>GUIアプリのブラックボックスをどう可視化するか</h3>
+    <p>screencaptureでの自己検証ループ、frameの実測ログ、log show(統合ログ)によるOSレベルの原因特定、tccutilでの権限リセット</p>
+  </a>
+</div>
+
+<h2>実装ファイルとの対応表</h2>
+<div class="table-scroll"><table>
+<tr><th>ファイル</th><th>役割</th><th>学習ノートの対応節</th></tr>
+<tr><td><code>Sources/FloatPlayer/main.swift</code></td><td>エントリーポイント、MainActor分離の橋渡し</td><td>Swift基礎編 1章</td></tr>
+<tr><td><code>Sources/FloatPlayer/MediaViewModel.swift</code></td><td>Combineによる状態管理(@Published)</td><td>Swift基礎編 2章</td></tr>
+<tr><td><code>Sources/FloatPlayer/AppDelegate.swift</code></td><td>NSPanel生成、ウィンドウレベル制御、メニューバー</td><td>NSWindow/NSPanel編 全章</td></tr>
+<tr><td><code>Sources/FloatPlayer/ContentView.swift</code></td><td>SwiftUIによる画面のUI構成</td><td>Swift基礎編 3章</td></tr>
+<tr><td><code>Sources/FloatPlayer/YouTubeWebView.swift</code></td><td>NSViewRepresentableでWKWebViewをラップ、IFrame Player API</td><td>WebKit/YouTube API編 全章</td></tr>
+<tr><td><code>Sources/FloatPlayer/ScreenshotWatcher.swift</code></td><td>DispatchSourceによるフォルダ監視</td><td>Swift基礎編 4章</td></tr>
+<tr><td><code>build_app.sh</code></td><td>Xcode無しでの.appバンドル生成・署名</td><td>デバッグ技法編 1章</td></tr>
+</table></div>
+
+</main>
+</div>
+
+<footer class="page-footer">FloatPlayer 学習ノート</footer>
+
+</body>
+</html>

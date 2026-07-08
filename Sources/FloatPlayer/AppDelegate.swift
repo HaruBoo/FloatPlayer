@@ -9,8 +9,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clickThroughMenuItem: NSMenuItem!
     private var uiHiddenMenuItem: NSMenuItem!
     private var chaptersMenuItem: NSMenuItem!
+    private var screenshotWatcherMenuItem: NSMenuItem!
     private let viewModel = MediaViewModel()
     private var cancellables = Set<AnyCancellable>()
+    private var screenshotWatcher: ScreenshotWatcher?
+    private var floatingScreenshots: [ScreenshotFloatWindow] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // macOSの自動終了/サドンターミネーション機構がこのアプリを
@@ -22,6 +25,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPanel()
         setupStatusItem()
         bindViewModel()
+
+        let watcher = ScreenshotWatcher { [weak self] url in
+            self?.showFloatingScreenshot(from: url)
+        }
+        watcher.start()
+        screenshotWatcher = watcher
+        screenshotWatcherMenuItem?.state = .on
+    }
+
+    // 部分スクリーンショットなどで新しい画像がスクリーンショット保存先フォルダに
+    // 現れたら、UIなしの画像だけのフローティングウィンドウとして表示する
+    private func showFloatingScreenshot(from url: URL) {
+        guard let image = NSImage(contentsOf: url) else { return }
+        let floatWindow = ScreenshotFloatWindow(image: image)
+        floatWindow.onClose = { [weak self, weak floatWindow] in
+            guard let floatWindow else { return }
+            self?.floatingScreenshots.removeAll { $0 === floatWindow }
+        }
+        floatingScreenshots.append(floatWindow)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -159,6 +181,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pastePhotoItem.target = self
         menu.addItem(pastePhotoItem)
 
+        let screenshotToggleItem = NSMenuItem(
+            title: "スクショを自動でフローティング表示",
+            action: #selector(toggleScreenshotWatcher),
+            keyEquivalent: ""
+        )
+        screenshotToggleItem.target = self
+        menu.addItem(screenshotToggleItem)
+        screenshotWatcherMenuItem = screenshotToggleItem
+
+        let screenshotHelpItem = NSMenuItem(
+            title: "→ Cmd+Shift+4等で撮ると自動で画像が浮きます",
+            action: nil,
+            keyEquivalent: ""
+        )
+        screenshotHelpItem.isEnabled = false
+        menu.addItem(screenshotHelpItem)
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: "終了", action: #selector(quit), keyEquivalent: "q")
@@ -232,6 +271,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func pastePhoto() {
         viewModel.pastePhotoFromClipboard()
+    }
+
+    @objc private func toggleScreenshotWatcher() {
+        if let watcher = screenshotWatcher {
+            watcher.stop()
+            screenshotWatcher = nil
+            screenshotWatcherMenuItem.state = .off
+        } else {
+            let watcher = ScreenshotWatcher { [weak self] url in
+                self?.showFloatingScreenshot(from: url)
+            }
+            watcher.start()
+            screenshotWatcher = watcher
+            screenshotWatcherMenuItem.state = .on
+        }
     }
 
     // クリックスルー中はパネル自身のトグルUIも押せなくなるため、

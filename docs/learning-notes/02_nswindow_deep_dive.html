@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NSWindow/NSPanel編: 消えるウィンドウと巨大化するウィンドウ | FloatPlayer 学習ノート</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top-nav"><div class="layout">
+  <a href="index.html">学習ノート目次</a>
+  <a href="01_swift_appkit_fundamentals.html">Swift基礎編</a>
+  <a href="02_nswindow_deep_dive.html" class="active">NSWindow/NSPanel編</a>
+  <a href="03_webkit_youtube_api.html">WebKit/YouTube API編</a>
+  <a href="04_debugging_techniques.html">デバッグ技法編</a>
+</div></nav>
+
+<header class="page-header">
+  <div class="layout">
+    <h1>NSWindow/NSPanel編: 消えるウィンドウと巨大化するウィンドウ</h1>
+    <p>「常に最前面に浮くウィンドウ」を作る過程で実際に踏んだ、AppKitのウィンドウ管理まわりの重いバグ4つを解説します。</p>
+  </div>
+</header>
+
+<div class="layout">
+<main>
+
+<h2 style="margin-top:0;">1. NSPanelの基本設定</h2>
+<p>
+  FloatPlayerのメインウィンドウは、通常の<code>NSWindow</code>ではなく<code>NSPanel</code>で作っている。
+  <code>NSPanel</code>は<code>NSWindow</code>のサブクラスで、パレット・ツールウィンドウ向けの挙動(後述の
+  <code>nonactivatingPanel</code>など)を追加で持つ。
+</p>
+<pre><code>let newPanel = NSPanel(
+    contentRect: NSRect(x: 200, y: 200, width: 420, height: 280),
+    styleMask: [.titled, .resizable, .closable, .miniaturizable,
+                .nonactivatingPanel, .fullSizeContentView],
+    backing: .buffered,
+    defer: false
+)
+newPanel.titleVisibility = .hidden
+newPanel.titlebarAppearsTransparent = true
+newPanel.level = .floating
+newPanel.isOpaque = false
+newPanel.backgroundColor = .clear</code></pre>
+<div class="table-scroll"><table>
+<tr><th>設定</th><th>意味</th></tr>
+<tr><td><code>.nonactivatingPanel</code></td><td>クリックしても他のアプリのアクティブ状態を奪わない</td></tr>
+<tr><td><code>.fullSizeContentView</code></td><td>コンテンツ領域がタイトルバーの裏側まで広がる(独自デザインのタイトルバー風UIを作るときの定番)</td></tr>
+<tr><td><code>level = .floating</code></td><td>通常ウィンドウより手前のレイヤーに常に表示する</td></tr>
+<tr><td><code>isOpaque = false</code> / <code>backgroundColor = .clear</code></td><td>ウィンドウの背景を透明にし、SwiftUI側で自由に描画する</td></tr>
+</table></div>
+
+<div class="box warn">
+  <span class="box-title">注意: .closable/.miniaturizableを付けないと信号機ボタンが「見えるだけ」になる</span>
+  <p>
+    <code>.titled</code>を指定すると赤・黄・緑の信号機ボタンは常に描画される。しかし
+    <code>.closable</code>・<code>.miniaturizable</code>を<code>styleMask</code>に含めていないと、
+    ボタンは<b>表示されるが無効化(グレーアウト)</b>された状態になる。「緑(拡大)だけ効くのに赤と黄が反応しない」
+    という症状が出たら、まずこのstyleMaskの組み合わせを疑うとよい。
+  </p>
+</div>
+
+<h2>2. バグ1: 入力しようとするとウィンドウが消える(hidesOnDeactivate)</h2>
+<p>
+  <code>NSPanel</code>には<code>hidesOnDeactivate</code>というプロパティがあり、
+  <b>既定値が<code>true</code></b>になっている。これは「自分のアプリが非アクティブになったら、
+  このパネルを自動的に隠す」という設定。
+</p>
+<p>
+  FloatPlayerはDockに出ないアクセサリ型アプリとして作っていたため、他のアプリ(ターミナルなど)に
+  一瞬フォーカスが移っただけで、このパネルが勝手に非表示になってしまっていた。ユーザーからは
+  「テキストフィールドをクリックして入力しようとすると、ウィンドウごと消える」ように見える。
+</p>
+<pre><code>// NSPanelは既定でhidesOnDeactivate=trueのため、他アプリにフォーカスが移ると
+// パネルごと隠れてしまう。常時フロートさせたいのでfalseにする
+newPanel.hidesOnDeactivate = false</code></pre>
+
+<h2>3. バグ2: システムがアプリを勝手に終了させる(Automatic/Sudden Termination)</h2>
+<p>
+  hidesOnDeactivateを直しても、まだ「操作しようとすると消える」現象が残っていた。
+  今度はConsole.appの統合ログ(<code>log show</code>、詳しくは<a href="04_debugging_techniques.html">デバッグ技法編</a>)で
+  実際に何が起きているかを確認したところ、次のログが見つかった。
+</p>
+<pre><code>[com.apple.AppKit:Application] terminate:
+[com.apple.AppKit:AutomaticTermination] Terminating
+[com.apple.AppKit:Application] Attempting sudden termination (1st attempt)</code></pre>
+<p>
+  macOSには「しばらく使われていないアプリを、ユーザーの許可を得ずに自動終了する」仕組みが
+  Lion(10.7)以降存在する(<b>Automatic Termination</b> / <b>Sudden Termination</b>)。
+  ウィンドウが少ない・アイドル状態のアプリはこの対象になりやすく、常駐ユーティリティであるFloatPlayerは
+  まさにこの挙動に巻き込まれていた。
+</p>
+<pre><code>func applicationDidFinishLaunching(_ notification: Notification) {
+    // macOSの自動終了/サドンターミネーション機構がこのアプリを
+    // アイドルな裏方アプリと誤認して勝手にterminate:するのを防ぐ
+    ProcessInfo.processInfo.disableAutomaticTermination("常駐して浮遊表示を続ける必要があるため")
+    ProcessInfo.processInfo.disableSuddenTermination()
+    // ...
+}</code></pre>
+
+<div class="box bug">
+  <span class="box-title">実際に踏んだエラー: 自分のデバッグコードが引き金になった別のクラッシュ</span>
+  <p>
+    この調査中、「何が終了の引き金になったか」を特定するために<code>applicationShouldTerminate</code>内で
+    <code>NSApp.currentEvent</code>の内容をログ出力するデバッグコードを一時的に追加した。
+  </p>
+<pre><code>// 危険: currentEventがキーボードイベントとは限らない
+print(event.charactersIgnoringModifiers ?? "nil")</code></pre>
+  <p>
+    ところがこのイベントはキーボードイベントとは限らず(実際は<code>KitDefined</code>という種類のシステムイベントだった)、
+    <code>.charactersIgnoringModifiers</code>をキーボード以外のイベント種別に対して呼び出すとAppKit内部で
+    <code>NSInternalInconsistencyException</code>が発生して落ちる。<b>デバッグのために足したログ自体が新たなクラッシュ原因になる</b>
+    という、実務でもよくある教訓を得た。イベントの<code>type</code>を確認してから安全にプロパティへアクセスするよう修正した。
+  </p>
+<pre><code>if event.type == .keyDown || event.type == .keyUp {
+    chars = event.charactersIgnoringModifiers ?? "nil"
+} else {
+    chars = "n/a"
+}</code></pre>
+</div>
+
+<h2>4. バグ3: 最後のウィンドウを閉じるとアプリごと終了する</h2>
+<p>
+  最終的に、上記の調査ログから<b>本当の引き金</b>が判明した。デリゲートメソッド
+  <code>applicationShouldTerminateAfterLastWindowClosed</code>が<code>true</code>を返していたため、
+  何らかの拍子でパネルが「閉じた」扱いになった瞬間、AppKitの
+  <code>_scheduleCheckForTerminateAfterLastWindowClosed</code>という内部処理がタイマー経由でアプリ全体を終了させていた。
+</p>
+<pre><code>func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    // このアプリはメニューバー常駐のユーティリティなので、
+    // パネルが(一瞬でも)閉じた扱いになってもアプリ全体は終了させない。
+    // 終了はメニューバーの「終了」からのみ行う。
+    false
+}</code></pre>
+<p>
+  メニューバー常駐アプリ(ステータスバーアイコンから操作するタイプ)では、
+  「メインウィンドウを閉じる」と「アプリを終了する」を分離するのが定石。この1行を直すことで、
+  パネルを閉じてもアプリはメニューバーに残り、「パネルを表示」でいつでも復帰できるようになった。
+</p>
+
+<h2>5. バグ4(最大の難所): ウィンドウが画面いっぱいまで巨大化する</h2>
+<p>
+  UIを整えている途中で、ウィンドウが指定した<code>420×280</code>を大きく超えて、
+  縦に1000ptを超えるサイズまで膨れ上がる現象が発生した。SwiftUI側のレイアウト(<code>Spacer</code>や
+  <code>.background()</code>など)を1つずつ疑って除去しても直らず、原因の特定に非常に時間がかかった。
+</p>
+<div class="box hands-on">
+  <span class="box-title">ハンズオン: 二分探索でバグを追い詰める</span>
+  <p>
+    最終的に有効だったのは、SwiftUIのコンテンツを<code>Text("Hello")</code>という最小の例に
+    差し替えて動作を見る、という「二分探索」的アプローチだった。
+  </p>
+<pre><code>let hosting = NSHostingView(rootView: Text("Hello TEMP DEBUG"))</code></pre>
+  <p>
+    このとき、ウィンドウは指定した<code>420×280</code>ではなく、<b>Textの内容にぴったり合った
+    119×48という小さいサイズ</b>になった。「複雑なUIだと巨大化し、単純なUIだと逆に縮む」——
+    この2つの実験結果から、<b>SwiftUIコンテンツの理想サイズ(fitting size)がウィンドウそのものを
+    書き換えている</b>という仮説にたどり着いた。
+  </p>
+</div>
+<p>
+  実際、<code>NSHostingView</code>は既定で<code>sizingOptions</code>というプロパティを持っており、
+  SwiftUI側のレイアウト結果(intrinsic content size)を自分の<b>親ウィンドウのサイズにまで伝播させる</b>。
+  通常のSwiftUI Appでは「ウィンドウの初期サイズをコンテンツに合わせたい」場面で便利な機能だが、
+  今回のように「ウィンドウサイズは自分たちで完全に管理したい」場合には邪魔になる。
+</p>
+<pre><code>let hosting = NSHostingView(rootView: ContentView(viewModel: viewModel))
+// NSHostingViewは既定でSwiftUI側の理想サイズ(fittingSize)に合わせて
+// ウィンドウ自体をリサイズしてしまう。ウィンドウサイズは自分たちで管理したいので無効化する
+hosting.sizingOptions = []</code></pre>
+<p>
+  この1行を追加した瞬間、何十行ものレイアウト修正を試しても直らなかった巨大化が完全に解消した。
+</p>
+
+<div class="box tip">
+  <span class="box-title">Tips: frameの実測ログで「思い込み」を排除する</span>
+  <p>
+    このバグ調査で決定的だったのは、スクリーンショットの目視ではなく、
+    <code>DispatchQueue.main.asyncAfter</code>で複数のタイミングにおける<code>panel.frame</code>と
+    <code>hosting.fittingSize</code>を実際に<code>print</code>したこと。
+  </p>
+<pre><code>for delay in [0.0, 0.5, 1.0, 2.0, 5.0] {
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+        print("t=\(delay) window.frame=\(newPanel.frame) " +
+              "hosting.fittingSize=\(hosting.fittingSize)")
+    }
+}</code></pre>
+  <p>
+    スクリーンショットの目測は「他のウィンドウとの重なり」「Retinaのスケール換算」などでいくらでも
+    誤読が起きる。数値を直接ログに出すことで、「本当にウィンドウのframeが変わっているのか」
+    「それとも見た目だけの問題か」を一発で切り分けられた。
+  </p>
+</div>
+
+<h2>6. ウィンドウレベルを状況に応じて切り替える</h2>
+<p>
+  「常に最前面」は便利だが、他のアプリを操作しているときまでFloatPlayerが手前に居座るのは邪魔になる。
+  そこで<code>NSWorkspace</code>のアプリ切り替え通知を購読し、<b>自分がアクティブな間だけ最前面、
+  それ以外は通常レベル</b>に切り替えるようにした。
+</p>
+<pre><code>NSWorkspace.shared.notificationCenter.addObserver(
+    self,
+    selector: #selector(handleAppActivation(_:)),
+    name: NSWorkspace.didActivateApplicationNotification,
+    object: nil
+)
+
+@objc private func handleAppActivation(_ note: Notification) {
+    guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey]
+        as? NSRunningApplication else { return }
+    panel.level = app.processIdentifier == ProcessInfo.processInfo.processIdentifier
+        ? .floating : .normal
+}</code></pre>
+<p>
+  <code>NSWorkspace.didActivateApplicationNotification</code>は、自分を含む<b>どのアプリがアクティブになっても</b>
+  発火する。<code>userInfo</code>から<code>NSRunningApplication</code>を取り出し、
+  そのプロセスIDが自分自身のもの(<code>ProcessInfo.processInfo.processIdentifier</code>)かどうかで、
+  「今アクティブなのは自分か、他のアプリか」を判定している。
+</p>
+
+<h2>まとめ: 4つのバグと直し方</h2>
+<div class="table-scroll"><table>
+<tr><th>症状</th><th>原因</th><th>直し方</th></tr>
+<tr><td>入力しようとするとウィンドウが消える</td><td><code>hidesOnDeactivate</code>の既定値がtrue</td><td><code>hidesOnDeactivate = false</code></td></tr>
+<tr><td>操作すると突然アプリが終了する</td><td>Automatic/Sudden Termination</td><td><code>disableAutomaticTermination</code> / <code>disableSuddenTermination</code></td></tr>
+<tr><td>パネルを閉じるとアプリごと終了する</td><td><code>applicationShouldTerminateAfterLastWindowClosed</code>がtrue</td><td>falseを返すようにする</td></tr>
+<tr><td>ウィンドウが画面いっぱいに巨大化する</td><td>NSHostingViewがSwiftUIの理想サイズにウィンドウを合わせてしまう</td><td><code>hosting.sizingOptions = []</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="01_swift_appkit_fundamentals.html">← Swift基礎編</a>
+  <a href="03_webkit_youtube_api.html">次: WebKit/YouTube API編 →</a>
+</div>
+
+</main>
+</div>
+
+<footer class="page-footer">FloatPlayer 学習ノート / NSWindow/NSPanel編</footer>
+
+</body>
+</html>

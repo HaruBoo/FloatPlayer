@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swift基礎編: 言語機能とAppKitの土台 | FloatPlayer 学習ノート</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top-nav"><div class="layout">
+  <a href="index.html">学習ノート目次</a>
+  <a href="01_swift_appkit_fundamentals.html" class="active">Swift基礎編</a>
+  <a href="02_nswindow_deep_dive.html">NSWindow/NSPanel編</a>
+  <a href="03_webkit_youtube_api.html">WebKit/YouTube API編</a>
+  <a href="04_debugging_techniques.html">デバッグ技法編</a>
+</div></nav>
+
+<header class="page-header">
+  <div class="layout">
+    <h1>Swift基礎編: 言語機能とAppKitの土台</h1>
+    <p>FloatPlayerで実際に使ったSwiftの言語機能と、SwiftUI/AppKitを橋渡しする仕組みを、コードと対応させながら解説します。</p>
+  </div>
+</header>
+
+<div class="layout">
+<main>
+
+<h2 style="margin-top:0;">0. Swiftの基礎知識(ざっくり)</h2>
+<p>
+  本編に入る前に、このアプリのコードを読むうえで最低限知っておくと楽になるSwiftの基礎を、
+  ごく軽くおさらいします。すでに知っている場合は<a href="#section1">1章</a>まで読み飛ばして構いません。
+</p>
+
+<h3>let と var</h3>
+<p>
+  <code>let</code>は再代入できない定数、<code>var</code>は再代入できる変数を宣言します。
+  Swiftでは「変わらない値には<code>let</code>を使う」のが強く推奨されるスタイルで、
+  このプロジェクトでも<code>var</code>は「本当に変化する状態」(例:<code>@Published var mode</code>)にだけ使っています。
+</p>
+<pre><code>let apiURL = "https://www.googleapis.com/youtube/v3/videos" // 再代入不可
+var isLoading = false                                       // 再代入可能
+isLoading = true</code></pre>
+
+<h3>型推論とOptional(nilを許す型)</h3>
+<p>
+  Swiftは<code>let name = "FloatPlayer"</code>のように書くだけで型(この場合<code>String</code>)を推論してくれます。
+  型注釈を省略できますが、型自体は静的に決まっている(後から別の型を代入することはできない)強い型付け言語です。
+</p>
+<p>
+  Swiftの大きな特徴が<b>Optional</b>。「値があるかもしれないし、無い(<code>nil</code>)かもしれない」ことを
+  型のレベルで表現する仕組みで、型名の後ろに<code>?</code>を付けます。
+</p>
+<pre><code>var videoURL: URL?          // URLが入っているか、nilかのどちらか
+var currentVideoID: String? // 動画未選択の状態をnilで表現している</code></pre>
+<p>
+  Optionalの中身を安全に取り出すには<code>if let</code>や<code>guard let</code>を使います。
+</p>
+<pre><code>guard let id = Self.extractYouTubeID(from: youtubeInput) else { return }
+// ここから先では id は String?ではなく、中身のあるString として使える</code></pre>
+<p>
+  <code>guard ... else { return }</code>は「条件を満たさなければここで処理を打ち切る」という書き方で、
+  ネストを深くせずに「早期リターン」できるためSwiftでは非常によく使われます。
+</p>
+
+<h3>クロージャ(無名関数)</h3>
+<p>
+  クロージャは<code>{ 引数 in 処理 }</code>という形の「その場で作る関数」です。他の言語のラムダ式・
+  アロー関数に相当します。非同期処理のコールバックとして頻繁に登場します。
+</p>
+<pre><code>URLSession.shared.dataTask(with: url) { data, _, _ in
+    // このブロック自体がクロージャ。dataが返ってきたときに後から呼ばれる
+    print(data ?? "no data")
+}.resume()</code></pre>
+<p>
+  クロージャが後から実行される(今すぐではない)関数の引数になっているとき、Swiftはその引数に
+  <code>@escaping</code>という注釈を要求することがあります。「この関数を抜けた後もクロージャが生き残る」
+  ことを明示するための注釈です。
+</p>
+
+<h3>struct と class の違い</h3>
+<p>
+  Swiftには値型の<code>struct</code>と参照型の<code>class</code>の両方があります。
+  <code>struct</code>は代入・関数への引渡し時に<b>コピー</b>されますが、<code>class</code>は
+  <b>同じ実体への参照</b>が共有されます。SwiftUIのビュー(<code>ContentView</code>)や
+  <code>Chapter</code>のようなデータの入れ物は<code>struct</code>、状態を持ち続けて
+  UI全体で共有したい<code>MediaViewModel</code>は<code>class</code>、という使い分けをしています。
+</p>
+<pre><code>struct Chapter: Identifiable {   // 値型: コピーされる、単純なデータ
+    let id = UUID()
+    let seconds: Int
+    let title: String
+}
+
+final class MediaViewModel: ObservableObject {  // 参照型: 複数箇所で同じインスタンスを共有
+    @Published var mode: PlaybackMode = .youtube
+}</code></pre>
+
+<h3>enum(列挙型)</h3>
+<p>
+  再生モードのように「決まった選択肢のどれか」を表すのに<code>enum</code>を使います。
+  Swiftのenumは他言語と違い、<b>計算プロパティやメソッドを持てる</b>のが特徴です。
+</p>
+<pre><code>enum PlaybackMode: String, CaseIterable, Identifiable {
+    case youtube, photo, video
+
+    var label: String {
+        switch self {
+        case .youtube: return "YouTube"
+        case .photo: return "写真"
+        case .video: return "動画"
+        }
+    }
+}</code></pre>
+
+<h3>プロトコル(protocol)</h3>
+<p>
+  プロトコルは「このメソッド/プロパティを持つこと」という約束事を定義するもので、
+  他言語のインターフェースに近い概念です。<code>AppDelegate</code>が<code>NSApplicationDelegate</code>プロトコルに
+  準拠する(<code>: NSObject, NSApplicationDelegate</code>)ことで、AppKit側から
+  <code>applicationDidFinishLaunching</code>などの決まったタイミングで呼び出してもらえるようになります。
+</p>
+<pre><code>final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // アプリ起動完了時にAppKitから呼ばれる
+    }
+}</code></pre>
+
+<div class="box tip">
+  <span class="box-title">Tips: ここまでの基礎が分かれば読み進められる</span>
+  <p>
+    <code>let</code>/<code>var</code>、Optional、クロージャ、struct/class、enum、protocolの6つが分かれば、
+    このアプリのコードの9割は読めるようになります。ここから先は、それらの基礎知識を前提に、
+    このアプリならではの実践的な使い方を見ていきます。
+  </p>
+</div>
+
+<h2 id="section1">1. @MainActor とアクター分離</h2>
+<p>
+  Swift 6ではデータ競合をコンパイル時に検出する「厳格な並行性チェック」が既定で有効になっている。
+  AppKit/SwiftUIのAPIはほぼすべて「メインスレッドでしか呼んではいけない」という制約があり、
+  Swiftはこれを<code>@MainActor</code>という属性で型システムに組み込んでいる。
+</p>
+<pre><code>@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var panel: NSPanel!
+    // ...
+}</code></pre>
+<p>
+  クラス全体に<code>@MainActor</code>を付けると、そのクラスのすべてのプロパティ・メソッドが
+  「メインスレッド上でのみアクセス可能」という制約を持つようになる。これにより、
+  バックグラウンドスレッドから誤って<code>panel</code>を触ってしまうようなコードは<b>コンパイルエラーになる</b>。
+</p>
+
+<div class="box bug">
+  <span class="box-title">実際に踏んだエラー: main.swiftトップレベルの分離違反</span>
+  <p>
+    <code>main.swift</code>のトップレベル(スクリプトのように直接実行される部分)は、
+    実行時にはメインスレッド上で動くにもかかわらず、<b>型システム上は@MainActorに分離されていない</b>。
+    そのため、@MainActor指定した<code>AppDelegate()</code>を素朴に呼ぶと次のエラーになった。
+  </p>
+<pre><code>error: call to main actor-isolated initializer 'init()'
+in a synchronous nonisolated context</code></pre>
+  <p>解決策は<code>MainActor.assumeIsolated</code>で「ここは実際にはメインスレッドである」と明示的に橋渡しすること。</p>
+<pre><code>import AppKit
+
+let app = NSApplication.shared
+// main.swiftのトップレベルはmain actor分離されていないため、明示的に橋渡しする
+let delegate = MainActor.assumeIsolated { AppDelegate() }
+app.delegate = delegate
+app.setActivationPolicy(.regular)
+app.run()</code></pre>
+</div>
+
+<h2>2. Combineによる状態管理(@Published)</h2>
+<p>
+  FloatPlayerではSwiftUIの画面とAppKitのウィンドウ・メニューバーという「2つのUI」が
+  <b>同じ状態</b>を参照する必要がある(例: 透明度スライダーの値は、SwiftUIのSliderにもAppKitのNSMenuItemにも影響する)。
+  この橋渡しにCombineの<code>@Published</code>と<code>sink</code>を使っている。
+</p>
+<pre><code>@MainActor
+final class MediaViewModel: ObservableObject {
+    @Published var mode: PlaybackMode = .youtube
+    @Published var isUIHidden: Bool = false
+    @Published var mediaOpacity: Double = 1.0
+    // ...
+}</code></pre>
+<p>
+  <code>ObservableObject</code>に準拠したクラスの<code>@Published</code>プロパティが変化すると、
+  SwiftUI側は自動的に再描画される。それとは別に、AppKit側(<code>AppDelegate</code>)では
+  <code>sink</code>で変化を購読し、ステータスバーのメニュー項目などAppKitのAPIを手動で更新する。
+</p>
+<pre><code>viewModel.$isUIHidden
+    .receive(on: RunLoop.main)
+    .sink { [weak self] hidden in
+        self?.uiHiddenMenuItem.state = hidden ? .on : .off
+        self?.uiHiddenMenuItem.title = hidden ? "UIを表示" : "UIを隠す"
+    }
+    .store(in: &cancellables)</code></pre>
+<p>
+  <code>[weak self]</code>は「このクロージャがselfを弱参照で持つ」という指定。<code>sink</code>のクロージャは
+  <code>cancellables</code>(<code>Set&lt;AnyCancellable&gt;</code>)に保持され続けるので、もし強参照(<code>self</code>をそのまま書く)にすると
+  <b>selfがこのクロージャを持ち、クロージャがselfを持つ</b>という循環参照(メモリリーク)になる。<code>weak</code>で防いでいる。
+</p>
+
+<div class="box tip">
+  <span class="box-title">Tips: PassthroughSubjectで「命令」を流す</span>
+  <p>
+    チャプター選択時のシーク処理には、状態を表す<code>@Published</code>ではなく
+    <code>PassthroughSubject&lt;Int, Never&gt;</code>を使っている。
+  </p>
+<pre><code>let seekSubject = PassthroughSubject<Int, Never>()
+
+func seek(toChapter chapter: Chapter) {
+    seekSubject.send(chapter.seconds)
+}</code></pre>
+  <p>
+    <code>@Published</code>は「現在の状態」を表すのに向いているが、シークは「一回きりのイベント」であって
+    状態ではない(同じ秒数に2回シークしたいこともある)。イベント通知には値を保持しない<code>PassthroughSubject</code>の方が適している。
+  </p>
+</div>
+
+<h2>3. SwiftUIとAppKitの橋渡し</h2>
+<h3>NSHostingViewでSwiftUIをAppKitウィンドウに載せる</h3>
+<p>
+  FloatPlayerは<code>WindowGroup</code>のような通常のSwiftUI Appライフサイクルを使わず、
+  <code>NSPanel</code>を直接作って、その<code>contentView</code>にSwiftUIビューを載せている。
+  この橋渡し役が<code>NSHostingView</code>。
+</p>
+<pre><code>let hosting = NSHostingView(rootView: ContentView(viewModel: viewModel))
+newPanel.contentView = hosting</code></pre>
+<p>
+  これにより、「タイトルバーを消す」「常に最前面に浮かせる」「クリックスルーさせる」といった
+  AppKit特有の細かいウィンドウ制御をしながら、画面の中身はSwiftUIで書けるようになる。
+  (このNSHostingViewには重大な落とし穴があり、詳しくは<a href="02_nswindow_deep_dive.html">NSWindow/NSPanel編</a>で扱う。)
+</p>
+
+<h3>NSViewRepresentableでAppKitの部品をSwiftUIに載せる</h3>
+<p>
+  逆方向の橋渡しが<code>NSViewRepresentable</code>。YouTube再生には<code>WKWebView</code>(AppKit/WebKitのクラス)が必要だが、
+  SwiftUIには標準のWebView部品がないため、自分でラップする。
+</p>
+<pre><code>struct YouTubeWebView: NSViewRepresentable {
+    @ObservedObject var viewModel: MediaViewModel
+
+    func makeNSView(context: Context) -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: config)
+        // ...
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        // SwiftUIの状態が変わるたびに呼ばれる
+    }
+
+    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        // このビューがSwiftUIツリーから外れるときに呼ばれる
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+    }
+}</code></pre>
+<p>
+  <code>makeNSView</code>(初回生成)、<code>updateNSView</code>(SwiftUIの再描画のたびに呼ばれる)、
+  <code>dismantleNSView</code>(ビューが破棄されるとき)という3つのライフサイクルメソッドを実装するのが基本形。
+</p>
+
+<div class="box hands-on">
+  <span class="box-title">ハンズオン: Coordinatorパターンで外部からの命令を受け取る</span>
+  <p>
+    「チャプターを選んだら、再読み込みせずに今再生中のWKWebViewをシークする」ためには、
+    SwiftUIの外(メニューバーのクリック)からWKWebViewに命令を送る経路が必要になる。
+    <code>NSViewRepresentable</code>は<code>Coordinator</code>という補助オブジェクトを持てるので、
+    そこでCombineの購読を持たせている。
+  </p>
+<pre><code>final class Coordinator {
+    private weak var webView: WKWebView?
+    private var cancellables = Set<AnyCancellable>()
+
+    func attach(_ webView: WKWebView) {
+        self.webView = webView
+        viewModel.seekSubject
+            .sink { [weak self] seconds in
+                self?.run("fpSeek(\(seconds));")
+            }
+            .store(in: &cancellables)
+    }
+}</code></pre>
+  <p>
+    こうしておくと、AppDelegate側は「seekSubjectに値を流すだけ」で、実際にWKWebViewの
+    JavaScriptを実行する責務はCoordinatorに閉じ込められる。SwiftUIの外の世界(メニューバー)と
+    中の世界(WKWebView)を、CombineのSubjectを介して疎結合につなぐパターン。
+  </p>
+</div>
+
+<h2>4. DispatchSourceによるファイル監視</h2>
+<p>
+  スクリーンショットの自動検出には、ポーリングではなく<b>カーネルのイベント通知(kqueue)</b>を
+  使った軽量な仕組みを使っている。
+</p>
+<pre><code>directoryFD = open(dir.path, O_EVTONLY)
+let source = DispatchSource.makeFileSystemObjectSource(
+    fileDescriptor: directoryFD,
+    eventMask: .write,
+    queue: .main
+)
+source.setEventHandler { [weak self] in
+    self?.checkForNewFiles(in: dir)
+}
+source.resume()</code></pre>
+<p>
+  <code>open(path, O_EVTONLY)</code>は「読み書きはしないが、変化だけ監視したい」ときのフラグ付きオープン。
+  ディレクトリのファイルディスクリプタに対して<code>.write</code>イベントを監視すると、
+  <b>そのディレクトリの中身が変化した瞬間(ファイルの追加・削除・リネーム)</b>にハンドラが呼ばれる。
+  これはPythonの<code>watchdog</code>やNode.jsの<code>fs.watch</code>と同じ、OSネイティブのファイル監視API。
+</p>
+
+<div class="box warn">
+  <span class="box-title">注意: 差分検出はアプリ側で行う必要がある</span>
+  <p>
+    <code>.write</code>イベントは「何かが変わった」としか教えてくれない。「何が追加されたか」は
+    自分でディレクトリの中身を列挙して、前回保持していたファイル名の集合(<code>Set&lt;String&gt;</code>)と
+    差分(<code>subtracting</code>)を取る必要がある。
+  </p>
+<pre><code>let current = Self.listImageFiles(in: dir)
+let newNames = current.subtracting(knownFiles)
+knownFiles = current</code></pre>
+</div>
+
+<h2>まとめ</h2>
+<div class="table-scroll"><table>
+<tr><th>概念</th><th>この章で出てきた場所</th></tr>
+<tr><td>@MainActor / MainActor.assumeIsolated</td><td>AppDelegate.swift, main.swift</td></tr>
+<tr><td>Combine(@Published / sink / PassthroughSubject)</td><td>MediaViewModel.swift, AppDelegate.swift</td></tr>
+<tr><td>NSHostingView(AppKit→SwiftUI)</td><td>AppDelegate.setupPanel</td></tr>
+<tr><td>NSViewRepresentable + Coordinator(SwiftUI→AppKit)</td><td>YouTubeWebView.swift</td></tr>
+<tr><td>DispatchSource.makeFileSystemObjectSource</td><td>ScreenshotWatcher.swift</td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="index.html">← 学習ノート目次</a>
+  <a href="02_nswindow_deep_dive.html">次: NSWindow/NSPanel編 →</a>
+</div>
+
+</main>
+</div>
+
+<footer class="page-footer">FloatPlayer 学習ノート / Swift基礎編</footer>
+
+</body>
+</html>

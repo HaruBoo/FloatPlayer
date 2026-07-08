@@ -11,8 +11,9 @@ struct ContentView: View {
                 if !viewModel.isUIHidden {
                     topBar
                         .background(DragHandle())
+                        .opacity(viewModel.uiOpacity)
 
-                    Divider().opacity(0.3)
+                    Divider().opacity(0.3 * viewModel.uiOpacity)
                 }
 
                 content
@@ -30,14 +31,14 @@ struct ContentView: View {
                     }
 
                 if !viewModel.isUIHidden {
-                    Divider().opacity(0.3)
+                    Divider().opacity(0.3 * viewModel.uiOpacity)
 
                     bottomBar
+                        .opacity(viewModel.uiOpacity)
                 }
             }
             // バーごとに背景を分けず、1枚のマテリアルにして段差をなくす
-            .background(.regularMaterial)
-            .opacity(viewModel.windowOpacity)
+            .background(.regularMaterial.opacity(viewModel.uiOpacity))
 
             if viewModel.isUIHidden {
                 // UIを隠している間もウィンドウを動かせるように、上端に細い帯だけ残す
@@ -102,6 +103,7 @@ struct ContentView: View {
 
             if viewModel.currentVideoID != nil {
                 YouTubeWebView(viewModel: viewModel)
+                    .opacity(viewModel.mediaOpacity)
             } else {
                 hint(text: "YouTubeのURLか動画IDを入力して「再生」を押してください")
             }
@@ -114,6 +116,7 @@ struct ContentView: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+                    .opacity(viewModel.mediaOpacity)
                     .overlay(alignment: .bottom) {
                         HStack {
                             Button("写真を選択") { viewModel.pickPhoto() }
@@ -140,6 +143,7 @@ struct ContentView: View {
         Group {
             if viewModel.videoURL != nil {
                 VideoPlayer(player: viewModel.player)
+                    .opacity(viewModel.mediaOpacity)
                     .overlay(alignment: .bottom) {
                         Button("動画を選択") { viewModel.pickVideo() }
                             .padding(8)
@@ -164,13 +168,22 @@ struct ContentView: View {
     }
 
     private var bottomBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "circle.lefthalf.filled")
-                .foregroundStyle(.secondary)
-            Slider(value: $viewModel.windowOpacity, in: 0.15...1.0)
-            Toggle("クリックスルー", isOn: $viewModel.isClickThrough)
-                .toggleStyle(.checkbox)
-                .font(.caption)
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "play.rectangle")
+                    .foregroundStyle(.secondary)
+                    .help("YouTube/写真/動画の透明度")
+                Slider(value: $viewModel.mediaOpacity, in: 0.15...1.0)
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "square.on.square")
+                    .foregroundStyle(.secondary)
+                    .help("UI(ボタン・スライダーなど)の透明度")
+                Slider(value: $viewModel.uiOpacity, in: 0.15...1.0)
+                Toggle("クリックスルー", isOn: $viewModel.isClickThrough)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+            }
         }
         .padding(8)
     }

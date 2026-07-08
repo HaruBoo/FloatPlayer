@@ -1,0 +1,275 @@
+/* FloatPlayer 学習ノート 共通スタイル */
+
+:root {
+  --color-bg: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-text: #1c2430;
+  --color-muted: #57606a;
+  --color-primary: #0a66c2;
+  --color-primary-dark: #084a8f;
+  --color-border: #e2e5e9;
+  --color-code-bg: #1e2530;
+  --color-code-text: #e6e6e6;
+  --color-accent-bg: #eaf3ff;
+  --color-warn-bg: #fdecea;
+  --color-tip-bg: #eaf6ee;
+  --radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Segoe UI", Meiryo, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.8;
+}
+
+.layout {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 20px 80px;
+}
+
+header.page-header {
+  background: linear-gradient(120deg, #0a66c2, #5aa9e6);
+  color: #fff;
+  padding: 36px 20px;
+  margin-bottom: 24px;
+}
+
+header.page-header .layout {
+  padding-bottom: 0;
+}
+
+header.page-header h1 {
+  margin: 0 0 8px;
+  font-size: 1.9rem;
+}
+
+header.page-header p {
+  margin: 0;
+  opacity: 0.9;
+}
+
+nav.top-nav {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+nav.top-nav .layout {
+  padding: 10px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+nav.top-nav a {
+  color: var(--color-muted);
+  text-decoration: none;
+  font-size: 0.88rem;
+  padding: 4px 2px;
+  border-bottom: 2px solid transparent;
+}
+
+nav.top-nav a:hover,
+nav.top-nav a.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+main {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 8px 4px;
+}
+
+h2 {
+  border-left: 6px solid var(--color-primary);
+  padding-left: 12px;
+  margin-top: 48px;
+  font-size: 1.4rem;
+}
+
+h3 {
+  margin-top: 32px;
+  font-size: 1.15rem;
+  color: var(--color-primary-dark);
+}
+
+h3::before {
+  content: "# ";
+  color: var(--color-primary);
+}
+
+p {
+  margin: 12px 0;
+}
+
+ul, ol {
+  padding-left: 1.6em;
+}
+
+li {
+  margin: 4px 0;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 16px 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 480px;
+  font-size: 0.92rem;
+}
+
+th, td {
+  border: 1px solid var(--color-border);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+th {
+  background: #f0f1f3;
+}
+
+code {
+  background: #eef0f2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.9em;
+}
+
+pre {
+  background: var(--color-code-bg);
+  color: var(--color-code-text);
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.box {
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin: 18px 0;
+}
+
+.box-title {
+  font-weight: bold;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.hands-on {
+  background: var(--color-accent-bg);
+  border: 1px solid #a9cdf0;
+}
+
+.hands-on .box-title {
+  color: var(--color-primary-dark);
+}
+
+.tip {
+  background: var(--color-tip-bg);
+  border: 1px solid #b7dfc2;
+}
+
+.warn {
+  background: var(--color-warn-bg);
+  border: 1px solid #f1b3ac;
+}
+
+.bug {
+  background: #fff1e8;
+  border: 1px solid #f0b98a;
+}
+
+.bug .box-title {
+  color: #a84300;
+}
+
+.pager {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.95rem;
+}
+
+.pager a {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.toc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.toc-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  text-decoration: none;
+  color: var(--color-text);
+  display: block;
+  background: var(--color-surface);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.toc-card:hover {
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+  transform: translateY(-2px);
+}
+
+.toc-card .num {
+  color: var(--color-primary);
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+
+.toc-card h3 {
+  margin: 6px 0 8px;
+  color: var(--color-text);
+}
+
+.toc-card h3::before {
+  content: "";
+}
+
+.toc-card p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+footer.page-footer {
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  margin-top: 60px;
+  padding: 20px;
+}

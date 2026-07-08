@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebKit/YouTube API編: WKWebViewでYouTubeを埋め込む | FloatPlayer 学習ノート</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top-nav"><div class="layout">
+  <a href="index.html">学習ノート目次</a>
+  <a href="01_swift_appkit_fundamentals.html">Swift基礎編</a>
+  <a href="02_nswindow_deep_dive.html">NSWindow/NSPanel編</a>
+  <a href="03_webkit_youtube_api.html" class="active">WebKit/YouTube API編</a>
+  <a href="04_debugging_techniques.html">デバッグ技法編</a>
+</div></nav>
+
+<header class="page-header">
+  <div class="layout">
+    <h1>WebKit/YouTube API編: WKWebViewでYouTubeを埋め込む</h1>
+    <p>WKWebViewでYouTubeを再生する際に踏んだ2つの埋め込みエラーと、公式のIFrame Player APIによるJS制御、YouTube Data APIでのチャプター抽出を解説します。</p>
+  </div>
+</header>
+
+<div class="layout">
+<main>
+
+<h2 style="margin-top:0;">1. なぜ直接ダウンロードせず埋め込みなのか</h2>
+<p>
+  FloatPlayerはYouTube動画を<b>ダウンロードしない</b>。WKWebView(SafariやChromeと同じWebKitエンジン)の中で、
+  YouTube公式の埋め込みプレイヤーをそのまま動かしている。これはYouTubeの利用規約に沿った標準的な埋め込み方法で、
+  一般的なWebサイトが動画を埋め込むのとまったく同じ仕組み。
+</p>
+
+<h2>2. バグ1: 「動画プレーヤーの設定エラー」— iframeなしでの直接ナビゲーション</h2>
+<p>
+  最初の実装では、<code>https://www.youtube.com/embed/{動画ID}</code>というURLに
+  WKWebViewを直接ナビゲートしていた。
+</p>
+<pre><code>// うまくいかなかった実装
+webView.load(URLRequest(url: embedURL))</code></pre>
+<p>
+  一見動きそうに見えるが、実際に再生しようとすると<b>「動画プレーヤーの設定エラーが発生しました」</b>という
+  エラーが表示された。原因は、YouTubeの埋め込みプレイヤーが<b>「自分はiframeの中で動いている」という前提</b>で
+  いくつかの検証(親ウィンドウのオリジンチェックなど)を行っており、WKWebViewの<b>最上位ページとして直接開いた場合</b>、
+  その前提が崩れて検証に失敗するため。
+</p>
+<div class="box bug">
+  <span class="box-title">直し方: ラッパーHTMLの中にiframeとして埋め込む</span>
+  <p>
+    実際のWebサイトがYouTube動画を埋め込むときと同じ状態を再現するため、
+    自前のHTMLページを作り、その中に<code>&lt;iframe&gt;</code>として埋め込むよう変更した。
+  </p>
+<pre><code>let html = """
+&lt;!doctype html&gt;
+&lt;html&gt;&lt;body style="margin:0;background:transparent;"&gt;
+&lt;iframe src="\(embedURL.absoluteString)"
+        style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;"
+        allow="autoplay; encrypted-media"
+        allowfullscreen&gt;&lt;/iframe&gt;
+&lt;/body&gt;&lt;/html&gt;
+"""
+webView.loadHTMLString(html, baseURL: URL(string: "https://example.com"))</code></pre>
+  <p>
+    <code>loadHTMLString(_:baseURL:)</code>は「文字列で組み立てたHTMLを、指定したURLがベースであるかのように」
+    読み込ませるAPI。これにより、YouTubeの埋め込みプレイヤーから見ると「あるWebページのiframeの中で
+    動いている」という、想定通りの状態になる。
+  </p>
+</div>
+
+<h2>3. バグ2: エラーコード152-4 — baseURLの選び方</h2>
+<p>
+  iframe化しただけではまだ再生できなかった。今度は「エラーコード152-4 この動画は再生できません」
+  という、別の動画でも再現するエラーが出た。原因は<code>baseURL</code>に<code>https://www.youtube.com</code>を
+  指定していたこと。
+</p>
+<p>
+  実際のWebサイトがYouTube動画を埋め込むとき、埋め込み元のサイトが<code>youtube.com</code>自身であることは
+  普通ありえない。<code>baseURL</code>をYouTube自身のドメインにすると、YouTube側の検証ロジックが
+  「自己参照的な埋め込み」と判断して不審に扱い、再生を拒否していたと考えられる。
+  無関係な独自ドメイン風の<code>baseURL</code>に変更したところ、再生できるようになった。
+</p>
+<pre><code>// NG: 自己埋め込みとして扱われて再生に失敗する
+webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+
+// OK: 実際のサイトが埋め込む状況に近い、無関係なオリジンにする
+webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))</code></pre>
+
+<div class="box tip">
+  <span class="box-title">Tips: 「動くはずのコードが動かない」時はエラーメッセージの版元を疑う</span>
+  <p>
+    今回の2つのエラーはどちらも、YouTube埋め込みプレイヤー自身のJavaScriptが出しているエラーであり、
+    Swift/WKWebView側には何のエラーも出ない(読み込み自体は「成功」する)。GUI上でエラーが出ても、
+    それが自分のアプリのバグなのか、埋め込んだWebコンテンツ側の検証ロジックなのかを見極めることが重要。
+  </p>
+</div>
+
+<h2>4. YouTube IFrame Player APIでJS制御する</h2>
+<p>
+  当初は「iframeのURLに<code>start=秒数</code>を付けて再読み込みする」ことでチャプタージャンプを実装していたが、
+  再読み込みのたびに映像が一瞬止まり、モード切り替えのたびにWKWebView自体が作り直されて再生位置が失われる
+  という問題があった。これを解決したのが、YouTube公式の<b>IFrame Player API</b>。
+</p>
+<pre><code>&lt;div id="player"&gt;&lt;/div&gt;
+&lt;script&gt;
+  var tag = document.createElement('script');
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.body.appendChild(tag);
+
+  var player;
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('player', {
+      videoId: '\(videoID)',
+      playerVars: { autoplay: 1, playsinline: 1, loop: 1, playlist: '\(videoID)' }
+    });
+  }
+  function fpPause() { if (player) player.pauseVideo(); }
+  function fpPlay()  { if (player) player.playVideo(); }
+  function fpSeek(sec) { if (player) { player.seekTo(sec, true); player.playVideo(); } }
+&lt;/script&gt;</code></pre>
+<p>
+  <code>https://www.youtube.com/iframe_api</code>を読み込むと、ページの中に
+  <code>YT.Player</code>というJavaScriptオブジェクトが使えるようになる。これは単なる<code>&lt;iframe&gt;</code>タグを
+  自前で書くよりも一段抽象度が高く、<code>pauseVideo()</code> / <code>playVideo()</code> / <code>seekTo()</code>といった
+  メソッドで<b>ページの再読み込みなしに</b>再生を制御できる。
+</p>
+<p>
+  Swift側からは<code>WKWebView.evaluateJavaScript(_:)</code>で、この<code>fpPause()</code>のような
+  自作のラッパー関数を呼び出す。
+</p>
+<pre><code>webView.evaluateJavaScript("fpSeek(\(seconds));", completionHandler: nil)</code></pre>
+
+<div class="box hands-on">
+  <span class="box-title">ハンズオン: モード切り替えでも再生を止めない設計</span>
+  <p>
+    SwiftUIで「YouTube/写真/動画」をタブのように切り替える場合、素朴に<code>switch</code>文で
+    表示するビューを出し分けると、非表示になったタブのビュー(WKWebViewやAVPlayer)は
+    SwiftUIのツリーから外れて<b>破棄されてしまう</b>。これだと裏に回ったYouTubeの音が鳴り続けたり、
+    戻ってきたときに動画が最初から再生されたりする不具合につながる。
+  </p>
+  <p>
+    FloatPlayerでは3つのセクションを<code>ZStack</code>で常に重ねてマウントしたままにし、
+    <code>.opacity()</code>と<code>.allowsHitTesting()</code>だけで見た目上の表示/非表示を切り替えている。
+  </p>
+<pre><code>ZStack {
+    youtubeSection
+        .opacity(viewModel.mode == .youtube ? 1 : 0)
+        .allowsHitTesting(viewModel.mode == .youtube)
+    photoSection
+        .opacity(viewModel.mode == .photo ? 1 : 0)
+        .allowsHitTesting(viewModel.mode == .photo)
+    videoSection
+        .opacity(viewModel.mode == .video ? 1 : 0)
+        .allowsHitTesting(viewModel.mode == .video)
+}</code></pre>
+  <p>
+    これによりWKWebViewのインスタンスは維持されたまま裏に回るだけなので、
+    モードが変わったタイミングを<code>viewModel.$mode</code>で購読して<code>fpPause()</code> /
+    <code>fpPlay()</code>を呼べば、「他のモードに切り替えたら一時停止、戻したら続きから再開」という
+    自然な挙動が実現できる。
+  </p>
+</div>
+
+<h2>5. YouTube Data APIでチャプターを抽出する</h2>
+<p>
+  動画の概要欄には、投稿者が書いた「0:00 イントロ」のようなタイムスタンプ行がしばしば含まれる。
+  これをチャプターとして使うため、YouTube Data API v3の<code>videos</code>エンドポイントで
+  概要欄のテキストを取得し、正規表現で解析している。
+</p>
+<pre><code>nonisolated static func parseChapters(fromDescription description: String) -> [Chapter] {
+    let pattern = #"^\(?(\d{1,2}(?::\d{2}){1,2})\)?\s*[-:–—]?\s*(.+)$"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+
+    var results: [Chapter] = []
+    for rawLine in description.components(separatedBy: .newlines) {
+        // 行頭が "0:00" や "1:23:45" のような時刻表記の行だけ拾う
+        // ...
+    }
+    // 誤検出(本文中の時刻表記など)を避けるため、最低2件そろって初めてチャプターとみなす
+    return results.count >= 2 ? results : []
+}</code></pre>
+<p>
+  正規表現<code>(\d{1,2}(?::\d{2}){1,2})</code>は「1〜2桁の数字の後に、<code>:2桁</code>が1〜2回続く」という意味で、
+  <code>0:00</code>(分:秒)にも<code>1:23:45</code>(時:分:秒)にも両方マッチする。
+  本文中にたまたま出てくる数字列を誤ってチャプターと判定しないよう、「行の先頭」に固定し(<code>^</code>)、
+  かつ「2件以上そろわなければチャプター扱いしない」という安全マージンを設けている。
+</p>
+
+<div class="box warn">
+  <span class="box-title">注意: nonisolated staticにする理由</span>
+  <p>
+    <code>parseChapters</code>は<code>URLSession</code>のコールバック(バックグラウンドスレッド)から呼ばれる。
+    しかし<code>MediaViewModel</code>クラス自体は<code>@MainActor</code>なので、そのままでは
+    「バックグラウンドからメインアクター専用のメソッドを呼んでいる」という警告になる。
+    このメソッドは<code>self</code>の状態を一切使わない<b>純粋関数</b>なので、明示的に
+    <code>nonisolated</code>を付けてアクター制約から外している。結果を<code>MainActor</code>へ戻すのは
+    呼び出し側の責務にする、という役割分担。
+  </p>
+<pre><code>URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+    let parsed = Self.parseChapters(fromAPIResponse: data)  // バックグラウンドで実行
+    Task { @MainActor in
+        self?.chapters = parsed  // メインアクターに戻してから状態を更新
+    }
+}.resume()</code></pre>
+</div>
+
+<h2>まとめ</h2>
+<div class="table-scroll"><table>
+<tr><th>症状/やりたいこと</th><th>原因/使ったAPI</th></tr>
+<tr><td>「動画プレーヤーの設定エラー」</td><td>embed URLへの直接ナビゲーション → iframeで包んで解決</td></tr>
+<tr><td>「エラーコード152-4」</td><td>baseURLがyoutube.com自身 → 無関係なオリジンに変更</td></tr>
+<tr><td>再読み込みなしの一時停止/再開/シーク</td><td>YouTube IFrame Player API(YT.Player) + evaluateJavaScript</td></tr>
+<tr><td>モード切替でも再生が途切れない</td><td>ZStack + opacity(常時マウント、破棄しない)</td></tr>
+<tr><td>チャプター抽出</td><td>YouTube Data API v3 + 正規表現</td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="02_nswindow_deep_dive.html">← NSWindow/NSPanel編</a>
+  <a href="04_debugging_techniques.html">次: デバッグ技法編 →</a>
+</div>
+
+</main>
+</div>
+
+<footer class="page-footer">FloatPlayer 学習ノート / WebKit/YouTube API編</footer>
+
+</body>
+</html>

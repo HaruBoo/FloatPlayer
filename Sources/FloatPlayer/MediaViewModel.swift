@@ -51,7 +51,8 @@ final class MediaViewModel: ObservableObject {
     @Published var videoURL: URL?
 
     // ウィンドウの見た目
-    @Published var windowOpacity: Double = 1.0
+    @Published var mediaOpacity: Double = 1.0 // YouTube/写真/動画の透明度
+    @Published var uiOpacity: Double = 1.0 // 上下バーなどUIの透明度
     @Published var isClickThrough: Bool = false
     @Published var isUIHidden: Bool = false
 

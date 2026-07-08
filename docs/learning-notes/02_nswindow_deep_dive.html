@@ -19,7 +19,7 @@
 <header class="page-header">
   <div class="layout">
     <h1>NSWindow/NSPanel編: 消えるウィンドウと巨大化するウィンドウ</h1>
-    <p>「常に最前面に浮くウィンドウ」を作る過程で実際に踏んだ、AppKitのウィンドウ管理まわりの重いバグ4つを解説します。</p>
+    <p>「常に最前面に浮くウィンドウ」と「スクリーンショット専用のフローティングウィンドウ」という2つのNSPanel実装を題材に、その設定内容と、実際に踏んだAppKitのウィンドウ管理まわりの重いバグ5つを解説します。</p>
   </div>
 </header>
 
@@ -220,13 +220,141 @@ hosting.sizingOptions = []</code></pre>
   「今アクティブなのは自分か、他のアプリか」を判定している。
 </p>
 
-<h2>まとめ: 4つのバグと直し方</h2>
+<h2>7. 機能: スクリーンショットの自動フローティングウィンドウ</h2>
+<p>
+  <a href="01_swift_appkit_fundamentals.html">Swift基礎編</a>で扱った<code>ScreenshotWatcher</code>が
+  新しいスクリーンショットを検知すると、<code>ScreenshotFloatWindow</code>が「UIなし・画像だけ」の
+  小さなフローティングウィンドウを画面に浮かべる。メインのプレイヤーパネルとは別に、
+  もう1つ<code>NSPanel</code>を使う実装なので、設定内容を比較しながら見ておく。
+</p>
+<pre><code>let newPanel = NSPanel(
+    contentRect: NSRect(origin: Self.nextSpawnPoint(), size: size),
+    // .titled+.resizableは1章のメインパネルと同じ組み合わせ。
+    // タイトルバーを透明・非表示にすることで見た目はボーダーレスにしている
+    // (なぜ素直に.borderlessにしなかったかは次の8章で扱う)
+    styleMask: [.titled, .resizable, .nonactivatingPanel, .fullSizeContentView],
+    backing: .buffered,
+    defer: false
+)
+newPanel.titleVisibility = .hidden
+newPanel.titlebarAppearsTransparent = true
+newPanel.standardWindowButton(.closeButton)?.isHidden = true
+newPanel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+newPanel.standardWindowButton(.zoomButton)?.isHidden = true
+newPanel.isOpaque = false
+newPanel.backgroundColor = .clear
+newPanel.hasShadow = true
+newPanel.level = .floating
+newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]</code></pre>
+<div class="table-scroll"><table>
+<tr><th>設定</th><th>意味</th></tr>
+<tr><td><code>.titled</code> + <code>titleVisibility = .hidden</code></td><td>タイトルバーの「実体」は残しつつ見た目だけ消す。実体を残す理由は8章参照</td></tr>
+<tr><td><code>standardWindowButton(...)?.isHidden</code></td><td>信号機ボタンを個別に非表示にする(styleMaskに.closable等を含めないだけだとグレーアウト表示のまま残る)</td></tr>
+<tr><td><code>.canJoinAllSpaces</code></td><td>Mission Controlのどのデスクトップ(Space)に切り替えても付いてくる</td></tr>
+</table></div>
+<p>
+  画像のドラッグ移動は、<code>NSImageView</code>ではなく自作の軽量な<code>NSView</code>サブクラスで実現している。
+  <code>NSImageView</code>は既定で「画像を他アプリへドラッグ書き出しする」機能を持っており、これが
+  <code>mouseDown</code>を横取りしてしまうため、<code>isMovableByWindowBackground</code>によるウィンドウの
+  背景ドラッグが効かなくなる。レイヤーに画像を描画するだけの自作ビューに置き換え、
+  <code>mouseDown</code>で直接<code>performDrag(with:)</code>を呼ぶことで確実に動かせるようにした。
+</p>
+<pre><code>override func mouseDown(with event: NSEvent) {
+    window?.performDrag(with: event)
+}</code></pre>
+<p>
+  右クリックメニュー(閉じる/保存/コピー)は自作ビューに<code>NSMenu</code>を直接持たせるだけで実現できる。
+  SwiftUIのコンテキストメニューを介さず、AppKitのビューにネイティブのメニューをそのまま生やせるのはAppKitならではの手軽さ。
+  透明度調整のスライダーは、右クリックメニューの<code>NSMenuItem.view</code>にカスタムビュー(<code>NSSlider</code>入り)を
+  差し込むことで、メニューの中に埋め込んでいる。
+</p>
+<pre><code>let menu = NSMenu()
+let opacityItem = NSMenuItem()
+opacityItem.view = OpacityMenuItemView(initialValue: newPanel.alphaValue) { value in
+    newPanel.alphaValue = value
+}
+menu.addItem(opacityItem)
+menu.addItem(withTitle: "閉じる", action: #selector(closeSelf), keyEquivalent: "").target = self
+imageView.menu = menu</code></pre>
+
+<div class="box tip">
+  <span class="box-title">Tips: 連続スクリーンショットが重ならないよう、出現位置をずらす</span>
+  <p>
+    立て続けにスクリーンショットを撮ると、フローティングウィンドウが毎回まったく同じ位置に出て
+    すべて重なってしまう。呼び出し回数を数え、6パターンの位置を斜めにずらして順番に割り当てることで、
+    複数枚を同時に見比べられるようにしている。
+  </p>
+<pre><code>private static var lastSpawnIndex = 0
+private static func nextSpawnPoint() -> NSPoint {
+    defer { lastSpawnIndex += 1 }
+    let offset = CGFloat((lastSpawnIndex % 6) * 32)
+    return NSPoint(x: 220 + offset, y: 420 - offset)
+}</code></pre>
+</div>
+
+<h2>8. バグ5(最難関): .borderlessウィンドウではカーソル形状が変えられない</h2>
+<p>
+  スクリーンショットのフローティングウィンドウを端からドラッグして拡大縮小できるようにしたとき、
+  「端にカーソルを合わせるとカーソルの形が矢印⇔リサイズ用に変わる」という、ブラウザなどでは
+  当たり前の挙動を再現しようとして、<b>6回連続で失敗</b>した。最終的な原因は実装の細部ではなく、
+  <b>.borderlessウィンドウという選択そのもの</b>にあった。
+</p>
+<div class="box bug">
+  <span class="box-title">実際に踏んだバグ: 6つの方式すべてがカーソルを変えられなかった</span>
+  <p>試した順に並べると次の通り。</p>
+<pre><code>1. resetCursorRects() + addCursorRect(...)
+   → 反映されるときとされないときがあり、判定できない
+2. NSTrackingArea + cursorUpdate(with:)
+   → 自分のアプリがアクティブな間は動くが、他アプリ(ブラウザ等)が
+     アクティブな間は呼ばれない
+3. NSEvent.addLocalMonitorForEvents + addGlobalMonitorForEvents
+   → 他アプリの環境と競合し、反応する時としない時がある
+4. Timer.scheduledTimerでの定期ポーリング + NSCursor.set()
+   → AppKit標準の「cursor rectが無ければ矢印に戻す」処理と競合し、
+     ほぼ勝てない
+5. resetCursorRects()を残しつつstyleMaskから.resizableだけ外す
+   → 変化なし
+6. 上記の組み合わせ(resetCursorRects + 非アクティブ時だけタイマー)
+   → それでも変わらない</code></pre>
+</div>
+<p>
+  6回目の失敗を受けて発想を変え、「メインパネルは<code>.titled</code>+<code>.resizable</code>で
+  問題なくリサイズもカーソルも機能している」という、すでに動いている実装と見比えることにした。
+  結論は単純で、<b><code>NSCursor.set()</code>や<code>resetCursorRects()</code>によるカーソル制御は、
+  <code>.titled</code>のような本物のウィンドウ枠(border)を持つウィンドウでないと安定して機能しない</b>
+  ——<code>.borderless</code>ウィンドウでは、標準のカーソル制御機構そのものに乗れていなかった。
+</p>
+<p>
+  そこで、リサイズを自前のmouseDown/mouseDragged判定で実装するのをやめ、7章の通り
+  <code>.titled</code> + <code>.resizable</code>にタイトルバーを透明・非表示にする方式へ切り替えた。
+  すると、自前のコードを1行も書かずに、AppKit標準のedge-dragリサイズとカーソル形状の変更が
+  そのまま正しく動くようになった。
+</p>
+<div class="box hands-on">
+  <span class="box-title">教訓: 「動いている実装との差分」から疑う</span>
+  <p>
+    6回の試行はすべて「カーソル制御の実装方法」を変える方向の修正で、いずれも症状の一部にしか
+    効かなかった。実際の原因は実装方法ではなく<b>styleMaskの選択(.borderless vs .titled)</b>という、
+    もっと手前の前提にあった。原因不明のバグが同じ機能の別実装(この場合はメインパネル)で
+    起きていないなら、両者の設定の差分を突き合わせるほうが、個別の対症療法を繰り返すより早い。
+  </p>
+</div>
+<p>
+  なお、<code>.titled</code>+<code>.resizable</code>にしたことで、縦横比を保ったまま拡大縮小する
+  <code>NSWindow.contentAspectRatio</code>も使えるようになった。ただし今回は「画像を自由に伸び縮みさせたい」
+  という要望だったため、あえて設定していない。画像側も<code>CALayer.contentsGravity</code>を
+  縦横比を保つ<code>.resizeAspect</code>ではなく、枠に合わせて引き伸ばす<code>.resize</code>にすることで、
+  ウィンドウの変形に画像そのものが追従するようにしている。
+</p>
+
+<h2>まとめ: 5つのバグと直し方</h2>
 <div class="table-scroll"><table>
 <tr><th>症状</th><th>原因</th><th>直し方</th></tr>
 <tr><td>入力しようとするとウィンドウが消える</td><td><code>hidesOnDeactivate</code>の既定値がtrue</td><td><code>hidesOnDeactivate = false</code></td></tr>
 <tr><td>操作すると突然アプリが終了する</td><td>Automatic/Sudden Termination</td><td><code>disableAutomaticTermination</code> / <code>disableSuddenTermination</code></td></tr>
 <tr><td>パネルを閉じるとアプリごと終了する</td><td><code>applicationShouldTerminateAfterLastWindowClosed</code>がtrue</td><td>falseを返すようにする</td></tr>
 <tr><td>ウィンドウが画面いっぱいに巨大化する</td><td>NSHostingViewがSwiftUIの理想サイズにウィンドウを合わせてしまう</td><td><code>hosting.sizingOptions = []</code></td></tr>
+<tr><td>borderlessウィンドウでカーソル形状が変わらない</td><td>カーソル制御機構自体が本物のウィンドウ枠(.titled)前提で、.borderlessでは安定して乗れない</td><td>.titled+.resizableにしてタイトルバーを透明・非表示にする</td></tr>
 </table></div>
 
 <div class="pager">

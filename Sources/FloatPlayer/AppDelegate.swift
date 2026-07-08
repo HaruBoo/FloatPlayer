@@ -10,9 +10,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var uiHiddenMenuItem: NSMenuItem!
     private var chaptersMenuItem: NSMenuItem!
     private var screenshotWatcherMenuItem: NSMenuItem!
+    private var clipboardWatcherMenuItem: NSMenuItem!
     private let viewModel = MediaViewModel()
     private var cancellables = Set<AnyCancellable>()
     private var screenshotWatcher: ScreenshotWatcher?
+    private var clipboardWatcher: ClipboardImageWatcher?
     private var floatingScreenshots: [ScreenshotFloatWindow] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -27,7 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bindViewModel()
 
         let watcher = ScreenshotWatcher { [weak self] url in
-            self?.showFloatingScreenshot(from: url)
+            guard let image = NSImage(contentsOf: url) else { return }
+            self?.showFloatingScreenshot(image: image)
         }
         watcher.start()
         screenshotWatcher = watcher
@@ -36,8 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // 部分スクリーンショットなどで新しい画像がスクリーンショット保存先フォルダに
     // 現れたら、UIなしの画像だけのフローティングウィンドウとして表示する
-    private func showFloatingScreenshot(from url: URL) {
-        guard let image = NSImage(contentsOf: url) else { return }
+    // (クリップボードのみのスクショもこの同じ経路を通る)
+    private func showFloatingScreenshot(image: NSImage) {
         let floatWindow = ScreenshotFloatWindow(image: image)
         floatWindow.onClose = { [weak self, weak floatWindow] in
             guard let floatWindow else { return }
@@ -198,6 +201,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         screenshotHelpItem.isEnabled = false
         menu.addItem(screenshotHelpItem)
 
+        let clipboardToggleItem = NSMenuItem(
+            title: "クリップボードの画像も自動でフローティング表示",
+            action: #selector(toggleClipboardWatcher),
+            keyEquivalent: ""
+        )
+        clipboardToggleItem.target = self
+        menu.addItem(clipboardToggleItem)
+        clipboardWatcherMenuItem = clipboardToggleItem
+
+        let clipboardHelpItem = NSMenuItem(
+            title: "→ Cmd+Ctrl+Shift+4等(保存せずコピー)にも反応します",
+            action: nil,
+            keyEquivalent: ""
+        )
+        clipboardHelpItem.isEnabled = false
+        menu.addItem(clipboardHelpItem)
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: "終了", action: #selector(quit), keyEquivalent: "q")
@@ -280,11 +300,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             screenshotWatcherMenuItem.state = .off
         } else {
             let watcher = ScreenshotWatcher { [weak self] url in
-                self?.showFloatingScreenshot(from: url)
+                guard let image = NSImage(contentsOf: url) else { return }
+                self?.showFloatingScreenshot(image: image)
             }
             watcher.start()
             screenshotWatcher = watcher
             screenshotWatcherMenuItem.state = .on
+        }
+    }
+
+    // 既定ではオフ。どんな画像コピーにも反応してしまうため、
+    // 「保存せずコピーだけのスクショ」も浮かせたい人向けの追加機能として提供する
+    @objc private func toggleClipboardWatcher() {
+        if let watcher = clipboardWatcher {
+            watcher.stop()
+            clipboardWatcher = nil
+            clipboardWatcherMenuItem.state = .off
+        } else {
+            let watcher = ClipboardImageWatcher { [weak self] image in
+                self?.showFloatingScreenshot(image: image)
+            }
+            watcher.start()
+            clipboardWatcher = watcher
+            clipboardWatcherMenuItem.state = .on
         }
     }
 

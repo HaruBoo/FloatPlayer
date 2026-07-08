@@ -52,7 +52,8 @@
   「YouTube/写真/動画を常に最前面のウィンドウで再生する」という単純な目的のアプリだが、
   実装の過程で<b>ウィンドウが画面いっぱいまで巨大化する</b>、<b>入力しようとするとアプリごと消える</b>、
   <b>YouTube埋め込みがエラーになる</b>など、AppKit特有のかなり手強いバグに何度も遭遇した。
-  この学習ノートは、そうした<b>実際に踏んだバグとその直し方</b>を中心に記録している。
+  この学習ノートの各章は、<b>実際にこのアプリで使った/作った機能の解説</b>と、<b>その機能を作る過程で
+  実際に踏んだバグとその直し方</b>をセットで記録している。
 </p>
 
 <div class="box tip">
@@ -75,7 +76,7 @@
   <a class="toc-card" href="02_nswindow_deep_dive.html">
     <div class="num">NSWindow/NSPanel編</div>
     <h3>「消えるウィンドウ」「巨大化するウィンドウ」の正体</h3>
-    <p>hidesOnDeactivate、自動終了(Automatic/Sudden Termination)、NSHostingViewが引き起こすウィンドウ肥大化バグ、ウィンドウレベルの制御</p>
+    <p>hidesOnDeactivate、自動終了(Automatic/Sudden Termination)、NSHostingViewが引き起こすウィンドウ肥大化バグ、ウィンドウレベルの制御、スクリーンショット専用フローティングウィンドウの実装、borderlessウィンドウでカーソル形状が変えられなかった話</p>
   </a>
 
   <a class="toc-card" href="03_webkit_youtube_api.html">
@@ -97,9 +98,10 @@
 <tr><td><code>Sources/FloatPlayer/main.swift</code></td><td>エントリーポイント、MainActor分離の橋渡し</td><td>Swift基礎編 1章</td></tr>
 <tr><td><code>Sources/FloatPlayer/MediaViewModel.swift</code></td><td>Combineによる状態管理(@Published)</td><td>Swift基礎編 2章</td></tr>
 <tr><td><code>Sources/FloatPlayer/AppDelegate.swift</code></td><td>NSPanel生成、ウィンドウレベル制御、メニューバー</td><td>NSWindow/NSPanel編 全章</td></tr>
-<tr><td><code>Sources/FloatPlayer/ContentView.swift</code></td><td>SwiftUIによる画面のUI構成</td><td>Swift基礎編 3章</td></tr>
+<tr><td><code>Sources/FloatPlayer/ContentView.swift</code></td><td>SwiftUIによる画面のUI構成、mediaOpacity/uiOpacityの階層設計</td><td>Swift基礎編 3・5章</td></tr>
 <tr><td><code>Sources/FloatPlayer/YouTubeWebView.swift</code></td><td>NSViewRepresentableでWKWebViewをラップ、IFrame Player API</td><td>WebKit/YouTube API編 全章</td></tr>
 <tr><td><code>Sources/FloatPlayer/ScreenshotWatcher.swift</code></td><td>DispatchSourceによるフォルダ監視</td><td>Swift基礎編 4章</td></tr>
+<tr><td><code>Sources/FloatPlayer/ScreenshotFloatWindow.swift</code></td><td>titled+resizable NSPanel(見た目はボーダーレス)による画像専用フローティングウィンドウ</td><td>NSWindow/NSPanel編 7・8章</td></tr>
 <tr><td><code>build_app.sh</code></td><td>Xcode無しでの.appバンドル生成・署名</td><td>デバッグ技法編 1章</td></tr>
 </table></div>
 

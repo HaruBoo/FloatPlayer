@@ -159,6 +159,19 @@ struct ContentView: View {
         }
     }
 
+    // 選択中のモードに合わせてラベルを切り替える(YouTubeは商標ロゴを避け汎用の再生アイコンにする)
+    @ViewBuilder
+    private var mediaOpacityLabel: some View {
+        switch viewModel.mode {
+        case .youtube:
+            Image(systemName: "play.rectangle.fill")
+        case .photo:
+            Text("写真")
+        case .video:
+            Text("動画")
+        }
+    }
+
     private func hint(text: String) -> some View {
         Text(text)
             .multilineTextAlignment(.center)
@@ -170,14 +183,18 @@ struct ContentView: View {
     private var bottomBar: some View {
         VStack(spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: "play.rectangle")
+                mediaOpacityLabel
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .frame(width: 32, alignment: .leading)
                     .help("YouTube/写真/動画の透明度")
                 Slider(value: $viewModel.mediaOpacity, in: 0.15...1.0)
             }
             HStack(spacing: 8) {
-                Image(systemName: "square.on.square")
+                Text("UI")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .frame(width: 32, alignment: .leading)
                     .help("UI(ボタン・スライダーなど)の透明度")
                 Slider(value: $viewModel.uiOpacity, in: 0.15...1.0)
                 Toggle("クリックスルー", isOn: $viewModel.isClickThrough)

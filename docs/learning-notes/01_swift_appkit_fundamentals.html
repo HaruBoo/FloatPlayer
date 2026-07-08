@@ -325,6 +325,76 @@ let newNames = current.subtracting(knownFiles)
 knownFiles = current</code></pre>
 </div>
 
+<div class="box bug">
+  <span class="box-title">実際に踏んだエラー: イベント発火直後は書き込みが終わっていないことがある</span>
+  <p>
+    <code>.write</code>イベントは「書き込みが完了した後」ではなく「書き込みが始まった/進行した」タイミングでも
+    発火することがある。スクリーンショットのように大きな画像ファイルだと、イベントを受けた直後に
+    <code>NSImage(contentsOf:)</code>で読み込もうとすると、まだファイルが書き終わっておらずデコードに失敗することがあった。
+  </p>
+<pre><code>// 書き込みが完了しきっていないタイミングで読むと失敗するため少し待つ
+DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+    self?.onNewScreenshot(newest)
+}</code></pre>
+  <p>
+    根本的な解決(ファイルサイズが安定するまで待つ、など)もできるが、今回は「0.3秒待ってから読む」という
+    簡易的なデバウンスで十分実用的な精度が出た。
+  </p>
+</div>
+
+<h2>5. 機能: 透明度スライダーを「映像用」と「UI用」に分ける</h2>
+<p>
+  FloatPlayerには透明度スライダーが2つある。<code>mediaOpacity</code>はYouTube/写真/動画そのものの透明度、
+  <code>uiOpacity</code>は上下バーやスライダーなどUI部品の透明度で、それぞれ独立に0.15〜1.0の範囲で動かせる。
+</p>
+<pre><code>// MediaViewModel.swift
+@Published var mediaOpacity: Double = 1.0 // YouTube/写真/動画の透明度
+@Published var uiOpacity: Double = 1.0    // 上下バーなどUIの透明度</code></pre>
+<p>
+  実装としては、SwiftUIの<code>.opacity()</code>修飾子を「どの階層のViewに付けるか」を厳密に分けるだけ。
+  上下バー全体には<code>uiOpacity</code>を、実際に映る中身(<code>YouTubeWebView</code>・<code>Image</code>・
+  <code>VideoPlayer</code>)にだけ<code>mediaOpacity</code>を付けている。
+</p>
+<pre><code>// ContentView.swift
+topBar
+    .background(DragHandle())
+    .opacity(viewModel.uiOpacity)
+// ...
+YouTubeWebView(viewModel: viewModel)
+    .opacity(viewModel.mediaOpacity)</code></pre>
+
+<div class="box bug">
+  <span class="box-title">実際に踏んだバグ: 説明文や入力欄まで透明になってしまう</span>
+  <p>
+    最初の実装では、YouTubeの入力欄やヒントテキストを含む<b>セクション全体</b>に
+    <code>mediaOpacity</code>を1つだけ付けていた。これだと映像を透明にしようとスライダーを動かすたびに、
+    <code>TextField</code>(URL入力欄)や説明文まで一緒に薄くなり、「文字が読めない」「入力欄がどこにあるか
+    分からない」状態になってしまった。
+  </p>
+<pre><code>// NG: セクション全体に1つのopacityを付けていた
+youtubeSection
+    .opacity(viewModel.mediaOpacity)</code></pre>
+  <p>
+    原因はシンプルで、「透明にしたいのは映像だけ」という意図に対して、<code>.opacity()</code>を
+    付ける階層が広すぎたこと。修正は、入力欄やヒントテキストを囲む親Viewから<code>.opacity()</code>を外し、
+    実際の映像コンポーネント(<code>YouTubeWebView</code>・<code>Image</code>・<code>VideoPlayer</code>)にだけ
+    個別に付け直すことだった。
+  </p>
+<pre><code>// OK: 入力欄・説明文には付けず、映像そのものにだけ付ける
+if !viewModel.isUIHidden {
+    TextField("YouTubeのURLまたは動画ID", text: $viewModel.youtubeInput)
+    // opacityなし。常にはっきり読める
+}
+if viewModel.currentVideoID != nil {
+    YouTubeWebView(viewModel: viewModel)
+        .opacity(viewModel.mediaOpacity) // 透明にしたいのはここだけ
+}</code></pre>
+  <p>
+    SwiftUIの<code>.opacity()</code>は子View全体に効くため、「何を透明にしたいか」を
+    <b>Viewツリーのどの階層に付けるか</b>で正確にコントロールする必要がある、という教訓を得た。
+  </p>
+</div>
+
 <h2>まとめ</h2>
 <div class="table-scroll"><table>
 <tr><th>概念</th><th>この章で出てきた場所</th></tr>
@@ -333,6 +403,7 @@ knownFiles = current</code></pre>
 <tr><td>NSHostingView(AppKit→SwiftUI)</td><td>AppDelegate.setupPanel</td></tr>
 <tr><td>NSViewRepresentable + Coordinator(SwiftUI→AppKit)</td><td>YouTubeWebView.swift</td></tr>
 <tr><td>DispatchSource.makeFileSystemObjectSource</td><td>ScreenshotWatcher.swift</td></tr>
+<tr><td>opacity修飾子の階層設計(mediaOpacity / uiOpacity)</td><td>ContentView.swift, MediaViewModel.swift</td></tr>
 </table></div>
 
 <div class="pager">

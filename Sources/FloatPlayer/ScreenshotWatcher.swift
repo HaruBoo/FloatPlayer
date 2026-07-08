@@ -70,12 +70,55 @@ final class ScreenshotWatcher {
 
     private static func listImageFiles(in dir: URL) -> Set<String> {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return [] }
-        return Set(names.filter { imageExtensions.contains(($0 as NSString).pathExtension.lowercased()) })
+        // スクリーンショットは書き込み中、"."で始まる一時的な隠しファイル名で
+        // 現れてから最終的なファイル名にリネームされることがあるため対象から除く
+        return Set(names.filter {
+            !$0.hasPrefix(".") && imageExtensions.contains(($0 as NSString).pathExtension.lowercased())
+        })
     }
 }
 
 private extension URL {
     var modificationDate: Date? {
         try? resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }
+}
+
+/// Cmd+Ctrl+Shift+4などファイル保存を伴わないスクリーンショットは、
+/// フォルダ監視では検知できないためクリップボードの変化を監視して拾う。
+/// macOSにはクリップボードの内容が「スクリーンショット由来」かを判別する
+/// 公開APIがないため、この監視は新しい画像がコピーされた時点で全て拾う
+/// (通常の画像コピー操作にも反応するため、既定ではオフの追加機能として扱う)。
+@MainActor
+final class ClipboardImageWatcher {
+    private var timer: Timer?
+    private var lastChangeCount: Int
+    private let onNewImage: (NSImage) -> Void
+
+    init(onNewImage: @escaping (NSImage) -> Void) {
+        self.onNewImage = onNewImage
+        lastChangeCount = NSPasteboard.general.changeCount
+    }
+
+    func start() {
+        lastChangeCount = NSPasteboard.general.changeCount
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.checkClipboard()
+            }
+        }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func checkClipboard() {
+        let pasteboard = NSPasteboard.general
+        guard pasteboard.changeCount != lastChangeCount else { return }
+        lastChangeCount = pasteboard.changeCount
+        guard let image = NSImage(pasteboard: pasteboard) else { return }
+        onNewImage(image)
     }
 }

@@ -16,9 +16,10 @@ swift build -c "$CONFIG"
 BIN_PATH=".build/$CONFIG/$EXECUTABLE_NAME"
 
 rm -rf "$APP_NAME"
-mkdir -p "$APP_NAME/Contents/MacOS"
+mkdir -p "$APP_NAME/Contents/MacOS" "$APP_NAME/Contents/Resources"
 cp "$BIN_PATH" "$APP_NAME/Contents/MacOS/$EXECUTABLE_NAME"
 cp Info.plist "$APP_NAME/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP_NAME/Contents/Resources/AppIcon.icns"
 
 # アドホック署名しておく(IME/TCCまわりの認識を安定させるため)
 codesign --force --deep --sign - "$APP_NAME"

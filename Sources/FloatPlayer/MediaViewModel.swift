@@ -159,7 +159,18 @@ final class MediaViewModel: ObservableObject {
 
     /// 部分スクリーンショット(Cmd+Shift+Ctrl+4など)をファイル保存なしでそのまま貼り付ける
     func pastePhotoFromClipboard() {
-        guard let image = NSImage(pasteboard: .general) else { return }
+        let pasteboard = NSPasteboard.general
+        // Finderでファイルをコピーすると、そのファイルに付随するアイコン画像が
+        // NSImage(pasteboard:)で誤って拾われてしまうことがある。ファイルURLが
+        // あればアイコンではなく実体のファイルを読みにいく(画像ファイルでなければ何もしない)
+        if let url = pasteboard.readObjects(forClasses: [NSURL.self], options: nil)?.first as? URL {
+            if let image = NSImage(contentsOf: url) {
+                photoImage = image
+                mode = .photo
+            }
+            return
+        }
+        guard let image = NSImage(pasteboard: pasteboard) else { return }
         photoImage = image
         mode = .photo
     }

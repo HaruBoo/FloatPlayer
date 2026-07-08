@@ -118,7 +118,11 @@ final class ClipboardImageWatcher {
         let pasteboard = NSPasteboard.general
         guard pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
-        guard let image = NSImage(pasteboard: pasteboard) else { return }
+        // Finderでファイルをコピーした時、そのファイルのアイコン画像がNSImage(pasteboard:)で
+        // 拾われてフローティング表示されてしまうことがあるため、ファイルURLがある場合は
+        // (通常のファイルコピーとみなして)画像コピーとして扱わない
+        let hasFileURL = !(pasteboard.readObjects(forClasses: [NSURL.self], options: nil) ?? []).isEmpty
+        guard !hasFileURL, let image = NSImage(pasteboard: pasteboard) else { return }
         onNewImage(image)
     }
 }

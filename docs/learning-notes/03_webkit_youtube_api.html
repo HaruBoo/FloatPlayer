@@ -26,14 +26,27 @@
 <div class="layout">
 <main>
 
-<h2 style="margin-top:0;">1. なぜ直接ダウンロードせず埋め込みなのか</h2>
+<div class="chapter-jump">
+  <label for="chapterSelect">この章から読む:</label>
+  <select id="chapterSelect" onchange="if (this.value) location.hash = this.value;">
+    <option value="">章を選択…</option>
+    <option value="#ch1">1. なぜ直接ダウンロードせず埋め込みなのか</option>
+    <option value="#ch2">2. バグ1: 「動画プレーヤーの設定エラー」— iframeなしでの直接ナビゲーション</option>
+    <option value="#ch3">3. バグ2: エラーコード152-4 — baseURLの選び方</option>
+    <option value="#ch4">4. YouTube IFrame Player APIでJS制御する</option>
+    <option value="#ch5">5. YouTube Data APIでチャプターを抽出する</option>
+    <option value="#summary">まとめ</option>
+  </select>
+</div>
+
+<h2 id="ch1" style="margin-top:0;">1. なぜ直接ダウンロードせず埋め込みなのか</h2>
 <p>
   FloatPlayerはYouTube動画を<b>ダウンロードしない</b>。WKWebView(SafariやChromeと同じWebKitエンジン)の中で、
   YouTube公式の埋め込みプレイヤーをそのまま動かしている。これはYouTubeの利用規約に沿った標準的な埋め込み方法で、
   一般的なWebサイトが動画を埋め込むのとまったく同じ仕組み。
 </p>
 
-<h2>2. バグ1: 「動画プレーヤーの設定エラー」— iframeなしでの直接ナビゲーション</h2>
+<h2 id="ch2">2. バグ1: 「動画プレーヤーの設定エラー」— iframeなしでの直接ナビゲーション</h2>
 <p>
   最初の実装では、<code>https://www.youtube.com/embed/{動画ID}</code>というURLに
   WKWebViewを直接ナビゲートしていた。
@@ -69,7 +82,7 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://example.com"))</code>
   </p>
 </div>
 
-<h2>3. バグ2: エラーコード152-4 — baseURLの選び方</h2>
+<h2 id="ch3">3. バグ2: エラーコード152-4 — baseURLの選び方</h2>
 <p>
   iframe化しただけではまだ再生できなかった。今度は「エラーコード152-4 この動画は再生できません」
   という、別の動画でも再現するエラーが出た。原因は<code>baseURL</code>に<code>https://www.youtube.com</code>を
@@ -96,7 +109,7 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
   </p>
 </div>
 
-<h2>4. YouTube IFrame Player APIでJS制御する</h2>
+<h2 id="ch4">4. YouTube IFrame Player APIでJS制御する</h2>
 <p>
   当初は「iframeのURLに<code>start=秒数</code>を付けて再読み込みする」ことでチャプタージャンプを実装していたが、
   再読み込みのたびに映像が一瞬止まり、モード切り替えのたびにWKWebView自体が作り直されて再生位置が失われる
@@ -162,7 +175,7 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
   </p>
 </div>
 
-<h2>5. YouTube Data APIでチャプターを抽出する</h2>
+<h2 id="ch5">5. YouTube Data APIでチャプターを抽出する</h2>
 <p>
   動画の概要欄には、投稿者が書いた「0:00 イントロ」のようなタイムスタンプ行がしばしば含まれる。
   これをチャプターとして使うため、YouTube Data API v3の<code>videos</code>エンドポイントで
@@ -205,7 +218,7 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
 }.resume()</code></pre>
 </div>
 
-<h2>まとめ</h2>
+<h2 id="summary">まとめ</h2>
 <div class="table-scroll"><table>
 <tr><th>症状/やりたいこと</th><th>原因/使ったAPI</th></tr>
 <tr><td>「動画プレーヤーの設定エラー」</td><td>embed URLへの直接ナビゲーション → iframeで包んで解決</td></tr>

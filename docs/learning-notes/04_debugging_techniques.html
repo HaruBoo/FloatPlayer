@@ -26,7 +26,20 @@
 <div class="layout">
 <main>
 
-<h2 style="margin-top:0;">1. Xcode無しでの.appバンドル生成</h2>
+<div class="chapter-jump">
+  <label for="chapterSelect">この章から読む:</label>
+  <select id="chapterSelect" onchange="if (this.value) location.hash = this.value;">
+    <option value="">章を選択…</option>
+    <option value="#ch1">1. Xcode無しでの.appバンドル生成</option>
+    <option value="#ch2">2. 統合ログ(log show)でOSレベルの原因を特定する</option>
+    <option value="#ch3">3. tccutilで権限状態をリセットする</option>
+    <option value="#ch4">4. スクリーンショットを使った「自分で見る」検証ループ</option>
+    <option value="#ch5">5. 「実測」を信じ、目視を疑う</option>
+    <option value="#summary">まとめ: 使ったコマンド一覧</option>
+  </select>
+</div>
+
+<h2 id="ch1" style="margin-top:0;">1. Xcode無しでの.appバンドル生成</h2>
 <p>
   FloatPlayerはSwift Package Managerだけで作っており、<code>swift build</code>が生成するのは
   ただの実行可能バイナリで、<b>正式な.appバンドルではない</b>。これが原因で、IME(日本語入力などの
@@ -50,7 +63,7 @@ codesign --force --deep --sign - "$APP_NAME"</code></pre>
   Apple Developer Programに入っていなくても、ローカルで動かすだけならこれで十分。
 </p>
 
-<h2>2. 統合ログ(log show)でOSレベルの原因を特定する</h2>
+<h2 id="ch2">2. 統合ログ(log show)でOSレベルの原因を特定する</h2>
 <p>
   <a href="02_nswindow_deep_dive.html">自動終了バグ</a>の真因を突き止めたのは、macOSの統合ログシステムを
   直接調べたことだった。<code>log show</code>コマンドは、Console.appの検索窓と同じ内容をターミナルから
@@ -75,7 +88,7 @@ codesign --force --deep --sign - "$APP_NAME"</code></pre>
 <pre><code>/usr/bin/log show --last 5m --predicate 'process == "tccd"'</code></pre>
 </div>
 
-<h2>3. tccutilで権限状態をリセットする</h2>
+<h2 id="ch3">3. tccutilで権限状態をリセットする</h2>
 <p>
   一度「許可しない」を選んでしまった権限や、テスト中に不安定になった権限状態をリセットしたいとき、
   <code>tccutil</code>コマンドが使える。
@@ -97,7 +110,7 @@ codesign --force --deep --sign - "$APP_NAME"</code></pre>
   </p>
 </div>
 
-<h2>4. スクリーンショットを使った「自分で見る」検証ループ</h2>
+<h2 id="ch4">4. スクリーンショットを使った「自分で見る」検証ループ</h2>
 <p>
   GUIアプリの見た目の問題(レイアウト崩れ、ウィンドウサイズなど)は、コードを読むだけでは分からないことが多い。
   <code>screencapture</code>コマンドを使えば、ターミナルから直接、今画面に映っているものをキャプチャできる。
@@ -127,7 +140,7 @@ kill -INT $REC_PID</code></pre>
   </p>
 </div>
 
-<h2>5. 「実測」を信じ、目視を疑う</h2>
+<h2 id="ch5">5. 「実測」を信じ、目視を疑う</h2>
 <p>
   このプロジェクトで最も時間がかかったウィンドウ巨大化バグ(<a href="02_nswindow_deep_dive.html">詳細</a>)では、
   スクリーンショットの目視だけでは「本当にウィンドウが大きいのか、他のウィンドウと重なって見えているだけか」
@@ -139,7 +152,7 @@ kill -INT $REC_PID</code></pre>
   数値・ログという<b>反証可能な形</b>で状態を確認するのが結局は一番早い、という教訓が今回の一番の学びだった。
 </p>
 
-<h2>まとめ: 使ったコマンド一覧</h2>
+<h2 id="summary">まとめ: 使ったコマンド一覧</h2>
 <div class="table-scroll"><table>
 <tr><th>コマンド</th><th>用途</th></tr>
 <tr><td><code>swift build</code></td><td>Xcode無しでのビルド</td></tr>

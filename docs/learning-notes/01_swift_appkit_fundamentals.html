@@ -26,10 +26,25 @@
 <div class="layout">
 <main>
 
-<h2 style="margin-top:0;">0. Swiftの基礎知識(ざっくり)</h2>
+<div class="chapter-jump">
+  <label for="chapterSelect">この章から読む:</label>
+  <select id="chapterSelect" onchange="if (this.value) location.hash = this.value;">
+    <option value="">章を選択…</option>
+    <option value="#ch0">0. Swiftの基礎知識(ざっくり)</option>
+    <option value="#ch1">1. @MainActor とアクター分離</option>
+    <option value="#ch2">2. Combineによる状態管理(@Published)</option>
+    <option value="#ch3">3. SwiftUIとAppKitの橋渡し</option>
+    <option value="#ch4">4. DispatchSourceによるファイル監視</option>
+    <option value="#ch4-5">4.5. 機能: クリップボードのみのスクリーンショットを拾う</option>
+    <option value="#ch5">5. 機能: 透明度スライダーを「映像用」と「UI用」に分ける</option>
+    <option value="#summary">まとめ</option>
+  </select>
+</div>
+
+<h2 id="ch0" style="margin-top:0;">0. Swiftの基礎知識(ざっくり)</h2>
 <p>
   本編に入る前に、このアプリのコードを読むうえで最低限知っておくと楽になるSwiftの基礎を、
-  ほんとに軽くだけおさらいします。すでに知っている場合は<a href="#section1">1章</a>まで読み飛ばして構いません。
+  ほんとに軽くだけおさらいします。すでに知っている場合は<a href="#ch1">1章</a>まで読み飛ばして構いません。
 </p>
 
 <h3>let と var</h3>
@@ -135,7 +150,7 @@ final class MediaViewModel: ObservableObject {  // 参照型: 複数箇所で同
   </p>
 </div>
 
-<h2 id="section1">1. @MainActor とアクター分離</h2>
+<h2 id="ch1">1. @MainActor とアクター分離</h2>
 <p>
   Swift 6ではデータ競合をコンパイル時に検出する「厳格な並行性チェック」が既定で有効になっている。
   AppKit/SwiftUIのAPIはほぼすべて「メインスレッドでしか呼んではいけない」という制約があり、
@@ -172,7 +187,7 @@ app.setActivationPolicy(.regular)
 app.run()</code></pre>
 </div>
 
-<h2>2. Combineによる状態管理(@Published)</h2>
+<h2 id="ch2">2. Combineによる状態管理(@Published)</h2>
 <p>
   FloatPlayerではSwiftUIの画面とAppKitのウィンドウ・メニューバーという「2つのUI」が
   <b>同じ状態</b>を参照する必要がある(例: 透明度スライダーの値は、SwiftUIのSliderにもAppKitのNSMenuItemにも影響する)。
@@ -220,7 +235,7 @@ func seek(toChapter chapter: Chapter) {
   </p>
 </div>
 
-<h2>3. SwiftUIとAppKitの橋渡し</h2>
+<h2 id="ch3">3. SwiftUIとAppKitの橋渡し</h2>
 <h3>NSHostingViewでSwiftUIをAppKitウィンドウに載せる</h3>
 <p>
   FloatPlayerは<code>WindowGroup</code>のような通常のSwiftUI Appライフサイクルを使わず、
@@ -291,7 +306,7 @@ newPanel.contentView = hosting</code></pre>
   </p>
 </div>
 
-<h2>4. DispatchSourceによるファイル監視</h2>
+<h2 id="ch4">4. DispatchSourceによるファイル監視</h2>
 <p>
   スクリーンショットの自動検出には、ポーリングではなく<b>カーネルのイベント通知(kqueue)</b>を
   使った軽量な仕組みを使っている。
@@ -361,7 +376,7 @@ return Set(names.filter {
   </p>
 </div>
 
-<h2>4.5. 機能: クリップボードのみのスクリーンショットを拾う</h2>
+<h2 id="ch4-5">4.5. 機能: クリップボードのみのスクリーンショットを拾う</h2>
 <p>
   Cmd+Ctrl+Shift+4のような「ファイル保存を伴わないスクリーンショット」は、上記のフォルダ監視では
   検知できない。そこで<code>ClipboardImageWatcher</code>は<code>NSPasteboard.general.changeCount</code>を
@@ -406,7 +421,7 @@ onNewImage(image)</code></pre>
   </p>
 </div>
 
-<h2>5. 機能: 透明度スライダーを「映像用」と「UI用」に分ける</h2>
+<h2 id="ch5">5. 機能: 透明度スライダーを「映像用」と「UI用」に分ける</h2>
 <p>
   FloatPlayerには透明度スライダーが2つある。<code>mediaOpacity</code>はYouTube/写真/動画そのものの透明度、
   <code>uiOpacity</code>は上下バーやスライダーなどUI部品の透明度で、それぞれ独立に0.15〜1.0の範囲で動かせる。
@@ -459,7 +474,7 @@ if viewModel.currentVideoID != nil {
   </p>
 </div>
 
-<h2>まとめ</h2>
+<h2 id="summary">まとめ</h2>
 <div class="table-scroll"><table>
 <tr><th>概念</th><th>この章で出てきた場所</th></tr>
 <tr><td>@MainActor / MainActor.assumeIsolated</td><td>AppDelegate.swift, main.swift</td></tr>

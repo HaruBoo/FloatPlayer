@@ -26,7 +26,23 @@
 <div class="layout">
 <main>
 
-<h2 style="margin-top:0;">1. NSPanelの基本設定</h2>
+<div class="chapter-jump">
+  <label for="chapterSelect">この章から読む:</label>
+  <select id="chapterSelect" onchange="if (this.value) location.hash = this.value;">
+    <option value="">章を選択…</option>
+    <option value="#ch1">1. NSPanelの基本設定</option>
+    <option value="#ch2">2. バグ1: 入力しようとするとウィンドウが消える(hidesOnDeactivate)</option>
+    <option value="#ch3">3. バグ2: システムがアプリを勝手に終了させる(Automatic/Sudden Termination)</option>
+    <option value="#ch4">4. バグ3: 最後のウィンドウを閉じるとアプリごと終了する</option>
+    <option value="#ch5">5. バグ4(最大の難所): ウィンドウが画面いっぱいまで巨大化する</option>
+    <option value="#ch6">6. ウィンドウレベルを状況に応じて切り替える</option>
+    <option value="#ch7">7. 機能: スクリーンショットの自動フローティングウィンドウ</option>
+    <option value="#ch8">8. バグ5(最難関): .borderlessウィンドウではカーソル形状が変えられない</option>
+    <option value="#summary">まとめ: 5つのバグと直し方</option>
+  </select>
+</div>
+
+<h2 id="ch1" style="margin-top:0;">1. NSPanelの基本設定</h2>
 <p>
   FloatPlayerのメインウィンドウは、通常の<code>NSWindow</code>ではなく<code>NSPanel</code>で作っている。
   <code>NSPanel</code>は<code>NSWindow</code>のサブクラスで、パレット・ツールウィンドウ向けの挙動(後述の
@@ -62,7 +78,7 @@ newPanel.backgroundColor = .clear</code></pre>
   </p>
 </div>
 
-<h2>2. バグ1: 入力しようとするとウィンドウが消える(hidesOnDeactivate)</h2>
+<h2 id="ch2">2. バグ1: 入力しようとするとウィンドウが消える(hidesOnDeactivate)</h2>
 <p>
   <code>NSPanel</code>には<code>hidesOnDeactivate</code>というプロパティがあり、
   <b>既定値が<code>true</code></b>になっている。これは「自分のアプリが非アクティブになったら、
@@ -77,7 +93,7 @@ newPanel.backgroundColor = .clear</code></pre>
 // パネルごと隠れてしまう。常時フロートさせたいのでfalseにする
 newPanel.hidesOnDeactivate = false</code></pre>
 
-<h2>3. バグ2: システムがアプリを勝手に終了させる(Automatic/Sudden Termination)</h2>
+<h2 id="ch3">3. バグ2: システムがアプリを勝手に終了させる(Automatic/Sudden Termination)</h2>
 <p>
   hidesOnDeactivateを直しても、まだ「操作しようとすると消える」現象が残っていた。
   今度はConsole.appの統合ログ(<code>log show</code>、詳しくは<a href="04_debugging_techniques.html">デバッグ技法編</a>)で
@@ -121,7 +137,7 @@ print(event.charactersIgnoringModifiers ?? "nil")</code></pre>
 }</code></pre>
 </div>
 
-<h2>4. バグ3: 最後のウィンドウを閉じるとアプリごと終了する</h2>
+<h2 id="ch4">4. バグ3: 最後のウィンドウを閉じるとアプリごと終了する</h2>
 <p>
   最終的に、上記の調査ログから<b>本当の引き金</b>が判明した。デリゲートメソッド
   <code>applicationShouldTerminateAfterLastWindowClosed</code>が<code>true</code>を返していたため、
@@ -140,7 +156,7 @@ print(event.charactersIgnoringModifiers ?? "nil")</code></pre>
   パネルを閉じてもアプリはメニューバーに残り、「パネルを表示」でいつでも復帰できるようになった。
 </p>
 
-<h2>5. バグ4(最大の難所): ウィンドウが画面いっぱいまで巨大化する</h2>
+<h2 id="ch5">5. バグ4(最大の難所): ウィンドウが画面いっぱいまで巨大化する</h2>
 <p>
   UIを整えている途中で、ウィンドウが指定した<code>420×280</code>を大きく超えて、
   縦に1000ptを超えるサイズまで膨れ上がる現象が発生した。SwiftUI側のレイアウト(<code>Spacer</code>や
@@ -194,7 +210,7 @@ hosting.sizingOptions = []</code></pre>
   </p>
 </div>
 
-<h2>6. ウィンドウレベルを状況に応じて切り替える</h2>
+<h2 id="ch6">6. ウィンドウレベルを状況に応じて切り替える</h2>
 <p>
   「常に最前面」は便利だが、他のアプリを操作しているときまでFloatPlayerが手前に居座るのは邪魔になる。
   そこで<code>NSWorkspace</code>のアプリ切り替え通知を購読し、<b>自分がアクティブな間だけ最前面、
@@ -220,7 +236,7 @@ hosting.sizingOptions = []</code></pre>
   「今アクティブなのは自分か、他のアプリか」を判定している。
 </p>
 
-<h2>7. 機能: スクリーンショットの自動フローティングウィンドウ</h2>
+<h2 id="ch7">7. 機能: スクリーンショットの自動フローティングウィンドウ</h2>
 <p>
   <a href="01_swift_appkit_fundamentals.html">Swift基礎編</a>で扱った<code>ScreenshotWatcher</code>が
   新しいスクリーンショットを検知すると、<code>ScreenshotFloatWindow</code>が「UIなし・画像だけ」の
@@ -292,7 +308,7 @@ private static func nextSpawnPoint() -> NSPoint {
 }</code></pre>
 </div>
 
-<h2>8. バグ5(最難関): .borderlessウィンドウではカーソル形状が変えられない</h2>
+<h2 id="ch8">8. バグ5(最難関): .borderlessウィンドウではカーソル形状が変えられない</h2>
 <p>
   スクリーンショットのフローティングウィンドウを端からドラッグして拡大縮小できるようにしたとき、
   「端にカーソルを合わせるとカーソルの形が矢印⇔リサイズ用に変わる」という、ブラウザなどでは
@@ -347,7 +363,7 @@ private static func nextSpawnPoint() -> NSPoint {
   ウィンドウの変形に画像そのものが追従するようにしている。
 </p>
 
-<h2>まとめ: 5つのバグと直し方</h2>
+<h2 id="summary">まとめ: 5つのバグと直し方</h2>
 <div class="table-scroll"><table>
 <tr><th>症状</th><th>原因</th><th>直し方</th></tr>
 <tr><td>入力しようとするとウィンドウが消える</td><td><code>hidesOnDeactivate</code>の既定値がtrue</td><td><code>hidesOnDeactivate = false</code></td></tr>

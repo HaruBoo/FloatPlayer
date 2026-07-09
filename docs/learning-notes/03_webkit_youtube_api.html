@@ -41,29 +41,48 @@
 
 <h2 id="ch1" style="margin-top:0;">1. なぜ直接ダウンロードせず埋め込みなのか</h2>
 <p>
-  FloatPlayerはYouTube動画を<b>ダウンロードしない</b>。WKWebView(SafariやChromeと同じWebKitエンジン)の中で、
-  YouTube公式の埋め込みプレイヤーをそのまま動かしている。これはYouTubeの利用規約に沿った標準的な埋め込み方法で、
-  一般的なWebサイトが動画を埋め込むのとまったく同じ仕組み。
+  この章に入る前に、前提知識を少し整理します。Webページは<b>HTML</b>(文章の構造を表すマークアップ言語)、
+  <b>CSS</b>(見た目を装飾する言語)、<b>JavaScript</b>(ページに動きを付けるプログラミング言語)の
+  組み合わせでできています。ブラウザ(Safari、Chromeなど)は、このHTML/CSS/JavaScriptを解釈して
+  画面に描画する<b>エンジン</b>(中核となるソフトウェア部品)を内部に持っています。SafariのエンジンはWebKit、
+  ChromeのエンジンはBlink(元はWebKitから派生)です。<code>WKWebView</code>は、AppleがWebKitエンジンを
+  「アプリの中に埋め込める部品」として提供しているクラスで、自分のアプリの中に「小さなSafari」を
+  持たせるようなイメージです。
+</p>
+<p>
+  FloatPlayerはYouTube動画を<b>ダウンロードしません</b>。<code>WKWebView</code>の中で、YouTube公式の
+  埋め込みプレイヤー(YouTubeがWebページに動画を貼り付けるために公式に提供している、そのまま
+  使えるプレイヤー画面)をそのまま動かしています。これはYouTubeの利用規約に沿った標準的な埋め込み方法で、
+  一般的なWebサイトが「YouTubeの動画をブログ記事に貼り付ける」のとまったく同じ仕組みです。
 </p>
 
 <h2 id="ch2">2. バグ1: 「動画プレーヤーの設定エラー」— iframeなしでの直接ナビゲーション</h2>
 <p>
-  最初の実装では、<code>https://www.youtube.com/embed/{動画ID}</code>というURLに
-  WKWebViewを直接ナビゲートしていた。
+  <b>iframe</b>とは、HTMLの中に「別のWebページをそのまま埋め込む」ための部品(タグ)です。
+  「ページの中に、もう1つ小さなページの窓を開ける」ようなイメージで、埋め込まれた側(この場合YouTube)は
+  「自分は誰か他のページの中の、小さな窓として動いている」という前提で作られています。
+</p>
+<p>
+  最初の実装では、<code>https://www.youtube.com/embed/{動画ID}</code>というURL(iframeを介さず、
+  YouTubeの埋め込みプレイヤー画面そのもの)にWKWebViewを直接ナビゲート(そのURLへ移動して表示)していました。
 </p>
 <pre><code>// うまくいかなかった実装
 webView.load(URLRequest(url: embedURL))</code></pre>
 <p>
-  一見動きそうに見えるが、実際に再生しようとすると<b>「動画プレーヤーの設定エラーが発生しました」</b>という
-  エラーが表示された。原因は、YouTubeの埋め込みプレイヤーが<b>「自分はiframeの中で動いている」という前提</b>で
-  いくつかの検証(親ウィンドウのオリジンチェックなど)を行っており、WKWebViewの<b>最上位ページとして直接開いた場合</b>、
-  その前提が崩れて検証に失敗するため。
+  一見動きそうに見えますが、実際に再生しようとすると<b>「動画プレーヤーの設定エラーが発生しました」</b>という
+  エラーが表示されました。原因は、YouTubeの埋め込みプレイヤーが<b>「自分はiframeの中で動いている」という
+  前提</b>でいくつかの検証(親ウィンドウの<b>オリジン</b>(URLの「どのサイトか」を表す部分。たとえば
+  <code>https://example.com</code>と<code>https://youtube.com</code>は別オリジン)をチェックする、など)を
+  行っており、WKWebViewの<b>最上位ページとして直接開いた場合</b>(つまりiframeという「窓の中」ではなく、
+  WKWebViewというブラウザそのもののトップページとして開いてしまった場合)、その前提が崩れて検証に
+  失敗するためでした。
 </p>
 <div class="box bug">
   <span class="box-title">直し方: ラッパーHTMLの中にiframeとして埋め込む</span>
   <p>
     実際のWebサイトがYouTube動画を埋め込むときと同じ状態を再現するため、
-    自前のHTMLページを作り、その中に<code>&lt;iframe&gt;</code>として埋め込むよう変更した。
+    自前のHTMLページ(「ラッパー」、iframeを包む外側の入れ物という意味)を作り、その中に
+    <code>&lt;iframe&gt;</code>として埋め込むよう変更しました。
   </p>
 <pre><code>let html = """
 &lt;!doctype html&gt;
@@ -77,22 +96,25 @@ webView.load(URLRequest(url: embedURL))</code></pre>
 webView.loadHTMLString(html, baseURL: URL(string: "https://example.com"))</code></pre>
   <p>
     <code>loadHTMLString(_:baseURL:)</code>は「文字列で組み立てたHTMLを、指定したURLがベースであるかのように」
-    読み込ませるAPI。これにより、YouTubeの埋め込みプレイヤーから見ると「あるWebページのiframeの中で
-    動いている」という、想定通りの状態になる。
+    読み込ませるAPI(部品が外部に公開している「呼び出し口」)です。これにより、YouTubeの埋め込みプレイヤーから
+    見ると「あるWebページのiframeの中で動いている」という、想定通りの状態になります。
   </p>
 </div>
 
 <h2 id="ch3">3. バグ2: エラーコード152-4 — baseURLの選び方</h2>
 <p>
-  iframe化しただけではまだ再生できなかった。今度は「エラーコード152-4 この動画は再生できません」
-  という、別の動画でも再現するエラーが出た。原因は<code>baseURL</code>に<code>https://www.youtube.com</code>を
-  指定していたこと。
+  iframe化しただけではまだ再生できませんでした。今度は「エラーコード152-4 この動画は再生できません」
+  という、別の動画でも再現するエラーが出ました。<code>baseURL</code>は「このHTML文字列が、
+  あたかもこのURLから配信されたページであるかのように扱ってください」とWKWebViewに伝えるための
+  パラメータ(関数に渡す設定値)で、<a href="#ch2">2章</a>で説明した「オリジン」を決めるものです。
+  原因は、この<code>baseURL</code>に<code>https://www.youtube.com</code>を指定していたことでした。
 </p>
 <p>
   実際のWebサイトがYouTube動画を埋め込むとき、埋め込み元のサイトが<code>youtube.com</code>自身であることは
-  普通ありえない。<code>baseURL</code>をYouTube自身のドメインにすると、YouTube側の検証ロジックが
-  「自己参照的な埋め込み」と判断して不審に扱い、再生を拒否していたと考えられる。
-  無関係な独自ドメイン風の<code>baseURL</code>に変更したところ、再生できるようになった。
+  普通ありえません。<code>baseURL</code>をYouTube自身のドメイン(オリジンの一部で、サイトの名前に
+  あたる部分)にすると、YouTube側の検証ロジックが「YouTubeが自分自身を埋め込んでいる、不自然な状態
+  (自己参照的な埋め込み)」と判断して不審に扱い、再生を拒否していたと考えられます。
+  無関係な独自ドメイン風の<code>baseURL</code>に変更したところ、再生できるようになりました。
 </p>
 <pre><code>// NG: 自己埋め込みとして扱われて再生に失敗する
 webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
@@ -111,9 +133,14 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
 
 <h2 id="ch4">4. YouTube IFrame Player APIでJS制御する</h2>
 <p>
-  当初は「iframeのURLに<code>start=秒数</code>を付けて再読み込みする」ことでチャプタージャンプを実装していたが、
-  再読み込みのたびに映像が一瞬止まり、モード切り替えのたびにWKWebView自体が作り直されて再生位置が失われる
-  という問題があった。これを解決したのが、YouTube公式の<b>IFrame Player API</b>。
+  当初は「iframeのURLに<code>start=秒数</code>を付けて再読み込みする」ことでチャプタージャンプを
+  実装していましたが、再読み込みのたびに映像が一瞬止まり、モード切り替えのたびにWKWebView自体が
+  作り直されて再生位置が失われるという問題がありました。これを解決したのが、YouTube公式の
+  <b>IFrame Player API</b>です。<b>API</b>(Application Programming Interface)とは、あるソフトウェアが
+  「外部のプログラムから、こういう風に呼び出して使ってください」と公開している窓口のことです。
+  今回のIFrame Player APIは、JavaScript(Webページに動きを付ける言語)から「動画を再生する」
+  「一時停止する」「指定した秒数にジャンプする」といった操作を、ページを再読み込みせずに
+  呼び出せるようにしてくれます。
 </p>
 <pre><code>&lt;div id="player"&gt;&lt;/div&gt;
 &lt;script&gt;
@@ -134,13 +161,18 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
 &lt;/script&gt;</code></pre>
 <p>
   <code>https://www.youtube.com/iframe_api</code>を読み込むと、ページの中に
-  <code>YT.Player</code>というJavaScriptオブジェクトが使えるようになる。これは単なる<code>&lt;iframe&gt;</code>タグを
-  自前で書くよりも一段抽象度が高く、<code>pauseVideo()</code> / <code>playVideo()</code> / <code>seekTo()</code>といった
-  メソッドで<b>ページの再読み込みなしに</b>再生を制御できる。
+  <code>YT.Player</code>というJavaScriptオブジェクトが使えるようになります。これは単なる<code>&lt;iframe&gt;</code>タグを
+  自前で書くよりも一段抽象度が高く(細かい実装を気にせず、より簡単な命令で扱えるという意味です)、
+  <code>pauseVideo()</code> / <code>playVideo()</code> / <code>seekTo()</code>といった
+  メソッドで<b>ページの再読み込みなしに</b>再生を制御できます。
 </p>
 <p>
   Swift側からは<code>WKWebView.evaluateJavaScript(_:)</code>で、この<code>fpPause()</code>のような
-  自作のラッパー関数を呼び出す。
+  自作のラッパー関数を呼び出します。<code>evaluateJavaScript</code>は、WKWebViewの中で表示している
+  ページに対して、<b>文字列として渡したJavaScriptコードをそのまま実行させる</b>というAPIです。
+  Swift(アプリ側の言語)とJavaScript(Webページ側の言語)は別々の言語なので、直接メソッドを
+  呼び合うことはできません。「実行してほしいJavaScriptのコードを、文字列として渡す」というのが、
+  この2つの世界をつなぐ橋渡しの方法です。
 </p>
 <pre><code>webView.evaluateJavaScript("fpSeek(\(seconds));", completionHandler: nil)</code></pre>
 
@@ -149,12 +181,13 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
   <p>
     SwiftUIで「YouTube/写真/動画」をタブのように切り替える場合、素朴に<code>switch</code>文で
     表示するビューを出し分けると、非表示になったタブのビュー(WKWebViewやAVPlayer)は
-    SwiftUIのツリーから外れて<b>破棄されてしまう</b>。これだと裏に回ったYouTubeの音が鳴り続けたり、
-    戻ってきたときに動画が最初から再生されたりする不具合につながる。
+    SwiftUIのツリーから外れて<b>破棄されてしまいます</b>。これだと裏に回ったYouTubeの音が鳴り続けたり、
+    戻ってきたときに動画が最初から再生されたりする不具合につながります。
   </p>
   <p>
-    FloatPlayerでは3つのセクションを<code>ZStack</code>で常に重ねてマウントしたままにし、
-    <code>.opacity()</code>と<code>.allowsHitTesting()</code>だけで見た目上の表示/非表示を切り替えている。
+    FloatPlayerでは3つのセクションを<code>ZStack</code>(SwiftUIで複数のビューを重ねて表示するための
+    仕組み)で常に重ねてマウントしたままにし、<code>.opacity()</code>と<code>.allowsHitTesting()</code>
+    だけで見た目上の表示/非表示を切り替えています。
   </p>
 <pre><code>ZStack {
     youtubeSection
@@ -171,15 +204,26 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
     これによりWKWebViewのインスタンスは維持されたまま裏に回るだけなので、
     モードが変わったタイミングを<code>viewModel.$mode</code>で購読して<code>fpPause()</code> /
     <code>fpPlay()</code>を呼べば、「他のモードに切り替えたら一時停止、戻したら続きから再開」という
-    自然な挙動が実現できる。
+    自然な挙動が実現できます。「見た目を切り替えるだけで、実体は破棄しない」というこの考え方は、
+    タブ切り替えUIやページ遷移で状態を保持したい場面全般に応用できます。
   </p>
 </div>
 
 <h2 id="ch5">5. YouTube Data APIでチャプターを抽出する</h2>
 <p>
-  動画の概要欄には、投稿者が書いた「0:00 イントロ」のようなタイムスタンプ行がしばしば含まれる。
-  これをチャプターとして使うため、YouTube Data API v3の<code>videos</code>エンドポイントで
-  概要欄のテキストを取得し、正規表現で解析している。
+  動画の概要欄には、投稿者が書いた「0:00 イントロ」のようなタイムスタンプ行がしばしば含まれます。
+  これをチャプターとして使うため、<b>YouTube Data API v3</b>という、YouTubeが公式に提供している
+  別のAPI(<a href="#ch4">4章</a>のIFrame Player APIとは別物で、こちらは「動画の情報をサーバーから
+  取得する」ためのAPI)の<code>videos</code><b>エンドポイント</b>(APIの中で「動画の情報がほしいときは
+  ここにアクセスしてください」という、機能ごとの呼び出し先URL)にアクセスして概要欄のテキストを
+  取得し、<b>正規表現</b>で解析しています。
+</p>
+<p>
+  正規表現(regular expression、regexとも呼ばれる)は、「文字列がある決まったパターンに
+  当てはまっているか」を調べたり、パターンに一致する部分を取り出したりするための、
+  専用の記法です。たとえば「数字が3つ並んでいる」「<code>@</code>を含む」のようなパターンを、
+  短い記号の組み合わせで表現できます。少し独特な書き方ですが、一度覚えるとどの言語でもほぼ
+  同じ記法が使える(細部の方言はあります)ので、覚えておくと汎用的に役立ちます。
 </p>
 <pre><code>nonisolated static func parseChapters(fromDescription description: String) -> [Chapter] {
     let pattern = #"^\(?(\d{1,2}(?::\d{2}){1,2})\)?\s*[-:–—]?\s*(.+)$"#
@@ -194,21 +238,38 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
     return results.count >= 2 ? results : []
 }</code></pre>
 <p>
-  正規表現<code>(\d{1,2}(?::\d{2}){1,2})</code>は「1〜2桁の数字の後に、<code>:2桁</code>が1〜2回続く」という意味で、
-  <code>0:00</code>(分:秒)にも<code>1:23:45</code>(時:分:秒)にも両方マッチする。
-  本文中にたまたま出てくる数字列を誤ってチャプターと判定しないよう、「行の先頭」に固定し(<code>^</code>)、
-  かつ「2件以上そろわなければチャプター扱いしない」という安全マージンを設けている。
+  この正規表現を1つずつ分解すると、次のようになります。
+</p>
+<div class="table-scroll"><table>
+<tr><th>記号</th><th>意味</th></tr>
+<tr><td><code>^</code></td><td>行の先頭(この位置から一致し始める)</td></tr>
+<tr><td><code>\d{1,2}</code></td><td>数字(<code>\d</code>)が1〜2個</td></tr>
+<tr><td><code>(?::\d{2}){1,2}</code></td><td>「<code>:</code>に続けて数字2個」のかたまりが1〜2回繰り返す</td></tr>
+<tr><td><code>(.+)$</code></td><td>その後に続く残り全部(タイトル部分)を、行末(<code>$</code>)まで取り出す</td></tr>
+</table></div>
+<p>
+  <code>(\d{1,2}(?::\d{2}){1,2})</code>という部分は「1〜2桁の数字の後に、<code>:2桁</code>が1〜2回続く」という
+  意味で、<code>0:00</code>(分:秒)にも<code>1:23:45</code>(時:分:秒)にも両方マッチ(パターンに
+  一致)します。本文中にたまたま出てくる数字列を誤ってチャプターと判定しないよう、「行の先頭」に固定し(<code>^</code>)、
+  かつ「2件以上そろわなければチャプター扱いしない」という安全マージンを設けています。
+  こうした「誤検出を防ぐための余分な条件を1つ足しておく」という考え方は、正規表現に限らず、
+  ユーザーが入力した曖昧なデータを解析するあらゆる場面で使える、汎用的な防御テクニックです。
 </p>
 
 <div class="box warn">
   <span class="box-title">注意: nonisolated staticにする理由</span>
   <p>
-    <code>parseChapters</code>は<code>URLSession</code>のコールバック(バックグラウンドスレッド)から呼ばれる。
-    しかし<code>MediaViewModel</code>クラス自体は<code>@MainActor</code>なので、そのままでは
-    「バックグラウンドからメインアクター専用のメソッドを呼んでいる」という警告になる。
-    このメソッドは<code>self</code>の状態を一切使わない<b>純粋関数</b>なので、明示的に
-    <code>nonisolated</code>を付けてアクター制約から外している。結果を<code>MainActor</code>へ戻すのは
-    呼び出し側の責務にする、という役割分担。
+    <code>parseChapters</code>は<code>URLSession</code>のコールバック(サーバーから返事が来たときに
+    呼ばれる関数)から呼ばれますが、これは<b>バックグラウンドスレッド</b>(<a href="01_swift_appkit_fundamentals.html#ch1">Swift基礎編1章</a>
+    で説明した、メイン画面の処理とは別に動く作業の流れ)上で実行されます。
+    しかし<code>MediaViewModel</code>クラス自体は<code>@MainActor</code>(そのクラスの中身は
+    メインスレッドからしか触れないという印)なので、そのままでは
+    「バックグラウンドからメインアクター専用のメソッドを呼んでいる」という警告になります。
+    このメソッドは<code>self</code>(インスタンス自身が持つ状態)を一切使わない<b>純粋関数</b>
+    (入力だけから出力が決まり、外部の状態を読み書きしない関数のこと)なので、明示的に
+    <code>nonisolated</code>(このメソッドだけは<code>@MainActor</code>の制約から除外する、という指定)を
+    付けてアクター制約から外しています。結果をメインアクターへ戻すのは呼び出し側の責務にする、
+    という役割分担です。
   </p>
 <pre><code>URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
     let parsed = Self.parseChapters(fromAPIResponse: data)  // バックグラウンドで実行
@@ -216,6 +277,11 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
         self?.chapters = parsed  // メインアクターに戻してから状態を更新
     }
 }.resume()</code></pre>
+  <p>
+    「重い処理や通信はバックグラウンドで行い、画面に反映する最後の一瞬だけメインスレッドに戻る」
+    というこの形は、GUIアプリでは繰り返し出てくる基本パターンです。ネットワーク通信・ファイル読み込み・
+    画像処理など、時間のかかる処理全般に応用できます。
+  </p>
 </div>
 
 <h2 id="summary">まとめ</h2>

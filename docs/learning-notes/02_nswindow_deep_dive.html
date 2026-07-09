@@ -44,9 +44,12 @@
 
 <h2 id="ch1" style="margin-top:0;">1. NSPanelの基本設定</h2>
 <p>
-  FloatPlayerのメインウィンドウは、通常の<code>NSWindow</code>ではなく<code>NSPanel</code>で作っている。
-  <code>NSPanel</code>は<code>NSWindow</code>のサブクラスで、パレット・ツールウィンドウ向けの挙動(後述の
-  <code>nonactivatingPanel</code>など)を追加で持つ。
+  FloatPlayerのメインウィンドウは、通常の<code>NSWindow</code>ではなく<code>NSPanel</code>で作っています。
+  <code>NSPanel</code>は<code>NSWindow</code>の<b>サブクラス</b>です。サブクラスとは、既存のクラス
+  (この場合<code>NSWindow</code>、「親クラス」と呼びます)が持つ機能をすべて引き継いだ上で、
+  独自の機能を追加したクラスのことです。「ウィンドウの基本機能はそのまま使いつつ、
+  パレット・ツールウィンドウ向けの追加の挙動(後述の<code>nonactivatingPanel</code>など)も欲しい」
+  という場合に、サブクラスとして定義されている<code>NSPanel</code>を使います。
 </p>
 <pre><code>let newPanel = NSPanel(
     contentRect: NSRect(x: 200, y: 200, width: 420, height: 280),
@@ -60,34 +63,46 @@ newPanel.titlebarAppearsTransparent = true
 newPanel.level = .floating
 newPanel.isOpaque = false
 newPanel.backgroundColor = .clear</code></pre>
+<p>
+  <code>styleMask</code>の<code>[.titled, .resizable, ...]</code>という書き方は、複数のオン/オフの
+  設定項目を<b>配列のように並べて一度に指定する</b>ためのものです。ここに書かれた項目だけが
+  有効になり、書かれていない項目は無効(false)として扱われます。それぞれの項目の意味は
+  次の通りです。
+</p>
 <div class="table-scroll"><table>
 <tr><th>設定</th><th>意味</th></tr>
 <tr><td><code>.nonactivatingPanel</code></td><td>クリックしても他のアプリのアクティブ状態を奪わない</td></tr>
 <tr><td><code>.fullSizeContentView</code></td><td>コンテンツ領域がタイトルバーの裏側まで広がる(独自デザインのタイトルバー風UIを作るときの定番)</td></tr>
-<tr><td><code>level = .floating</code></td><td>通常ウィンドウより手前のレイヤーに常に表示する</td></tr>
+<tr><td><code>level = .floating</code></td><td>通常ウィンドウより手前のレイヤーに常に表示する(<a href="#ch6">6章</a>で詳しく扱う)</td></tr>
 <tr><td><code>isOpaque = false</code> / <code>backgroundColor = .clear</code></td><td>ウィンドウの背景を透明にし、SwiftUI側で自由に描画する</td></tr>
 </table></div>
 
 <div class="box warn">
   <span class="box-title">注意: .closable/.miniaturizableを付けないと信号機ボタンが「見えるだけ」になる</span>
   <p>
-    <code>.titled</code>を指定すると赤・黄・緑の信号機ボタンは常に描画される。しかし
+    <code>.titled</code>を指定すると赤・黄・緑の信号機ボタンは常に描画されます。しかし
     <code>.closable</code>・<code>.miniaturizable</code>を<code>styleMask</code>に含めていないと、
-    ボタンは<b>表示されるが無効化(グレーアウト)</b>された状態になる。「緑(拡大)だけ効くのに赤と黄が反応しない」
-    という症状が出たら、まずこのstyleMaskの組み合わせを疑うとよい。
+    ボタンは<b>表示されるが無効化(グレーアウト)</b>された状態になります。「緑(拡大)だけ効くのに赤と黄が反応しない」
+    という症状が出たら、まずこのstyleMaskの組み合わせを疑うとよいです。
   </p>
 </div>
 
 <h2 id="ch2">2. バグ1: 入力しようとするとウィンドウが消える(hidesOnDeactivate)</h2>
 <p>
-  <code>NSPanel</code>には<code>hidesOnDeactivate</code>というプロパティがあり、
-  <b>既定値が<code>true</code></b>になっている。これは「自分のアプリが非アクティブになったら、
-  このパネルを自動的に隠す」という設定。
+  <code>NSPanel</code>には<code>hidesOnDeactivate</code>というプロパティ(クラスが持つ設定値・状態のこと)が
+  あり、<b>既定値(初期設定のまま何も変更しなければそうなる値)が<code>true</code></b>になっています。
+  これは「自分のアプリが非アクティブ(操作対象ではなくなった状態。他のアプリをクリックすると、
+  今まで触っていたアプリは非アクティブになります)になったら、このパネルを自動的に隠す」という設定です。
 </p>
 <p>
-  FloatPlayerはDockに出ないアクセサリ型アプリとして作っていたため、他のアプリ(ターミナルなど)に
-  一瞬フォーカスが移っただけで、このパネルが勝手に非表示になってしまっていた。ユーザーからは
-  「テキストフィールドをクリックして入力しようとすると、ウィンドウごと消える」ように見える。
+  FloatPlayerはDock(画面下部などに表示される、起動中アプリのアイコン一覧)に出ない
+  <b>アクセサリ型アプリ</b>(メニューバーの右側に小さいアイコンだけ表示され、Dockには常駐しない
+  タイプのアプリ)として作っていたため、他のアプリ(ターミナルなど)に一瞬フォーカスが移っただけで、
+  このパネルが勝手に非表示になってしまっていました。ユーザーからは「テキストフィールドをクリックして
+  入力しようとすると、ウィンドウごと消える」ように見えます。これは、テキストフィールドをクリックした
+  つもりが、その瞬間に一時的に他のアプリ(たとえばIME=日本語入力の変換候補ウィンドウなど)へ
+  フォーカスが移り、それをきっかけにFloatPlayerが「非アクティブになった」と判定されてしまう、
+  というのが実際の流れでした。
 </p>
 <pre><code>// NSPanelは既定でhidesOnDeactivate=trueのため、他アプリにフォーカスが移ると
 // パネルごと隠れてしまう。常時フロートさせたいのでfalseにする
@@ -95,18 +110,23 @@ newPanel.hidesOnDeactivate = false</code></pre>
 
 <h2 id="ch3">3. バグ2: システムがアプリを勝手に終了させる(Automatic/Sudden Termination)</h2>
 <p>
-  hidesOnDeactivateを直しても、まだ「操作しようとすると消える」現象が残っていた。
-  今度はConsole.appの統合ログ(<code>log show</code>、詳しくは<a href="04_debugging_techniques.html">デバッグ技法編</a>)で
-  実際に何が起きているかを確認したところ、次のログが見つかった。
+  hidesOnDeactivateを直しても、まだ「操作しようとすると消える」現象が残っていました。ここからは
+  推測で直そうとせず、<b>実際に何が起きているかを観察する</b>という方針に切り替えます。
+  macOSには、アプリが出力したログをまとめて記録している「統合ログ」という仕組みがあり、
+  <code>log show</code>というコマンド(詳しくは<a href="04_debugging_techniques.html">デバッグ技法編</a>)で
+  過去のログを検索できます。これで実際に何が起きているかを確認したところ、次のログが見つかりました。
 </p>
 <pre><code>[com.apple.AppKit:Application] terminate:
 [com.apple.AppKit:AutomaticTermination] Terminating
 [com.apple.AppKit:Application] Attempting sudden termination (1st attempt)</code></pre>
 <p>
+  「アプリが勝手に終了(terminate)させられている」ことがログから読み取れます。調べたところ、
   macOSには「しばらく使われていないアプリを、ユーザーの許可を得ずに自動終了する」仕組みが
-  Lion(10.7)以降存在する(<b>Automatic Termination</b> / <b>Sudden Termination</b>)。
-  ウィンドウが少ない・アイドル状態のアプリはこの対象になりやすく、常駐ユーティリティであるFloatPlayerは
-  まさにこの挙動に巻き込まれていた。
+  Lion(macOS 10.7)以降存在することが分かりました(<b>Automatic Termination</b> /
+  <b>Sudden Termination</b>という名前の機能です)。これは、メモリや電力を節約するために、
+  「今使われていなさそうなアプリ」をOSが判断して自動的に終了させる仕組みです。ウィンドウが少ない・
+  アイドル(何も操作されていない)状態のアプリはこの対象になりやすく、常駐ユーティリティである
+  FloatPlayerは、まさにこの挙動に巻き込まれていました。
 </p>
 <pre><code>func applicationDidFinishLaunching(_ notification: Notification) {
     // macOSの自動終了/サドンターミネーション機構がこのアプリを
@@ -120,15 +140,15 @@ newPanel.hidesOnDeactivate = false</code></pre>
   <span class="box-title">実際に踏んだエラー: 自分のデバッグコードが引き金になった別のクラッシュ</span>
   <p>
     この調査中、「何が終了の引き金になったか」を特定するために<code>applicationShouldTerminate</code>内で
-    <code>NSApp.currentEvent</code>の内容をログ出力するデバッグコードを一時的に追加した。
+    <code>NSApp.currentEvent</code>の内容をログ出力するデバッグコードを一時的に追加しました。
   </p>
 <pre><code>// 危険: currentEventがキーボードイベントとは限らない
 print(event.charactersIgnoringModifiers ?? "nil")</code></pre>
   <p>
-    ところがこのイベントはキーボードイベントとは限らず(実際は<code>KitDefined</code>という種類のシステムイベントだった)、
+    ところがこのイベントはキーボードイベントとは限らず(実際は<code>KitDefined</code>という種類のシステムイベントでした)、
     <code>.charactersIgnoringModifiers</code>をキーボード以外のイベント種別に対して呼び出すとAppKit内部で
-    <code>NSInternalInconsistencyException</code>が発生して落ちる。<b>デバッグのために足したログ自体が新たなクラッシュ原因になる</b>
-    という、実務でもよくある教訓を得た。イベントの<code>type</code>を確認してから安全にプロパティへアクセスするよう修正した。
+    <code>NSInternalInconsistencyException</code>が発生して落ちます。<b>デバッグのために足したログ自体が新たなクラッシュ原因になる</b>
+    という、実務でもよくある教訓を得ました。イベントの<code>type</code>を確認してから安全にプロパティへアクセスするよう修正しました。
   </p>
 <pre><code>if event.type == .keyDown || event.type == .keyUp {
     chars = event.charactersIgnoringModifiers ?? "nil"
@@ -139,10 +159,14 @@ print(event.charactersIgnoringModifiers ?? "nil")</code></pre>
 
 <h2 id="ch4">4. バグ3: 最後のウィンドウを閉じるとアプリごと終了する</h2>
 <p>
-  最終的に、上記の調査ログから<b>本当の引き金</b>が判明した。デリゲートメソッド
-  <code>applicationShouldTerminateAfterLastWindowClosed</code>が<code>true</code>を返していたため、
-  何らかの拍子でパネルが「閉じた」扱いになった瞬間、AppKitの
-  <code>_scheduleCheckForTerminateAfterLastWindowClosed</code>という内部処理がタイマー経由でアプリ全体を終了させていた。
+  最終的に、上記の調査ログから<b>本当の引き金</b>が判明しました。<b>デリゲートメソッド</b>とは、
+  「特定のタイミングでAppKit側から自動的に呼び出される、あらかじめ名前が決まっている
+  メソッド」のことです(<a href="01_swift_appkit_fundamentals.html#ch0">Swift基礎編0章</a>の
+  プロトコルの説明も参照)。今回関係していたのは
+  <code>applicationShouldTerminateAfterLastWindowClosed</code>という、「最後のウィンドウが閉じられた時に
+  アプリごと終了してよいか」をAppKitがアプリ側に尋ねてくるデリゲートメソッドです。これが
+  (実装していなかったため既定で)<code>true</code>を返す扱いになっていたため、何らかの拍子で
+  パネルが「閉じた」扱いになった瞬間、AppKitの内部処理がタイマー経由でアプリ全体を終了させていました。
 </p>
 <pre><code>func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     // このアプリはメニューバー常駐のユーティリティなので、
@@ -152,42 +176,48 @@ print(event.charactersIgnoringModifiers ?? "nil")</code></pre>
 }</code></pre>
 <p>
   メニューバー常駐アプリ(ステータスバーアイコンから操作するタイプ)では、
-  「メインウィンドウを閉じる」と「アプリを終了する」を分離するのが定石。この1行を直すことで、
-  パネルを閉じてもアプリはメニューバーに残り、「パネルを表示」でいつでも復帰できるようになった。
+  「メインウィンドウを閉じる」と「アプリを終了する」を分離するのが定石です。この1行を直すことで、
+  パネルを閉じてもアプリはメニューバーに残り、「パネルを表示」でいつでも復帰できるようになりました。
 </p>
 
 <h2 id="ch5">5. バグ4(最大の難所): ウィンドウが画面いっぱいまで巨大化する</h2>
 <p>
   UIを整えている途中で、ウィンドウが指定した<code>420×280</code>を大きく超えて、
-  縦に1000ptを超えるサイズまで膨れ上がる現象が発生した。SwiftUI側のレイアウト(<code>Spacer</code>や
-  <code>.background()</code>など)を1つずつ疑って除去しても直らず、原因の特定に非常に時間がかかった。
+  縦に1000ptを超えるサイズまで膨れ上がる現象が発生しました。SwiftUI側のレイアウト(<code>Spacer</code>や
+  <code>.background()</code>など)を1つずつ疑って除去しても直らず、原因の特定に非常に時間がかかりました。
 </p>
 <div class="box hands-on">
   <span class="box-title">ハンズオン: 二分探索でバグを追い詰める</span>
   <p>
-    最終的に有効だったのは、SwiftUIのコンテンツを<code>Text("Hello")</code>という最小の例に
-    差し替えて動作を見る、という「二分探索」的アプローチだった。
+    原因が分からないコードの中から犯人を1つずつ見ていくのは非効率です。こういうときに有効なのが
+    <b>二分探索的なアプローチ</b>です。「疑わしい範囲を半分に割って、どちら側に原因があるかを
+    確認する」を繰り返すことで、少ない試行回数で原因を絞り込めます。今回は、複雑なSwiftUIの
+    画面をいきなり全部調べるのではなく、まず<b>画面の中身を極限まで単純化した最小の例</b>に
+    差し替えて動作を見る、という形で、この考え方を応用しました。
   </p>
 <pre><code>let hosting = NSHostingView(rootView: Text("Hello TEMP DEBUG"))</code></pre>
   <p>
     このとき、ウィンドウは指定した<code>420×280</code>ではなく、<b>Textの内容にぴったり合った
-    119×48という小さいサイズ</b>になった。「複雑なUIだと巨大化し、単純なUIだと逆に縮む」——
-    この2つの実験結果から、<b>SwiftUIコンテンツの理想サイズ(fitting size)がウィンドウそのものを
-    書き換えている</b>という仮説にたどり着いた。
+    119×48という小さいサイズ</b>になりました。「複雑なUIだと巨大化し、単純なUIだと逆に縮む」——
+    この2つの実験結果を見比べることで、<b>SwiftUIコンテンツの理想サイズ(fitting size。
+    「このくらいの大きさで表示したい」というSwiftUI側の希望サイズ)がウィンドウそのものを
+    書き換えている</b>という仮説にたどり着きました。「怪しい箇所を1つずつ削って、最小の状態でも
+    症状が再現するかを確認する」というこの手順は、原因不明のバグ全般に応用できる、
+    汎用性の高いデバッグの型です。
   </p>
 </div>
 <p>
   実際、<code>NSHostingView</code>は既定で<code>sizingOptions</code>というプロパティを持っており、
-  SwiftUI側のレイアウト結果(intrinsic content size)を自分の<b>親ウィンドウのサイズにまで伝播させる</b>。
-  通常のSwiftUI Appでは「ウィンドウの初期サイズをコンテンツに合わせたい」場面で便利な機能だが、
-  今回のように「ウィンドウサイズは自分たちで完全に管理したい」場合には邪魔になる。
+  SwiftUI側のレイアウト結果(intrinsic content size)を自分の<b>親ウィンドウのサイズにまで伝播させます</b>。
+  通常のSwiftUI Appでは「ウィンドウの初期サイズをコンテンツに合わせたい」場面で便利な機能ですが、
+  今回のように「ウィンドウサイズは自分たちで完全に管理したい」場合には邪魔になります。
 </p>
 <pre><code>let hosting = NSHostingView(rootView: ContentView(viewModel: viewModel))
 // NSHostingViewは既定でSwiftUI側の理想サイズ(fittingSize)に合わせて
 // ウィンドウ自体をリサイズしてしまう。ウィンドウサイズは自分たちで管理したいので無効化する
 hosting.sizingOptions = []</code></pre>
 <p>
-  この1行を追加した瞬間、何十行ものレイアウト修正を試しても直らなかった巨大化が完全に解消した。
+  この1行を追加した瞬間、何十行ものレイアウト修正を試しても直らなかった巨大化が完全に解消しました。
 </p>
 
 <div class="box tip">
@@ -195,7 +225,7 @@ hosting.sizingOptions = []</code></pre>
   <p>
     このバグ調査で決定的だったのは、スクリーンショットの目視ではなく、
     <code>DispatchQueue.main.asyncAfter</code>で複数のタイミングにおける<code>panel.frame</code>と
-    <code>hosting.fittingSize</code>を実際に<code>print</code>したこと。
+    <code>hosting.fittingSize</code>を実際に<code>print</code>したことでした。
   </p>
 <pre><code>for delay in [0.0, 0.5, 1.0, 2.0, 5.0] {
     DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -205,16 +235,21 @@ hosting.sizingOptions = []</code></pre>
 }</code></pre>
   <p>
     スクリーンショットの目測は「他のウィンドウとの重なり」「Retinaのスケール換算」などでいくらでも
-    誤読が起きる。数値を直接ログに出すことで、「本当にウィンドウのframeが変わっているのか」
-    「それとも見た目だけの問題か」を一発で切り分けられた。
+    誤読が起きます。数値を直接ログに出すことで、「本当にウィンドウのframeが変わっているのか」
+    「それとも見た目だけの問題か」を一発で切り分けられました。
   </p>
 </div>
 
 <h2 id="ch6">6. ウィンドウレベルを状況に応じて切り替える</h2>
 <p>
-  「常に最前面」は便利だが、他のアプリを操作しているときまでFloatPlayerが手前に居座るのは邪魔になる。
-  そこで<code>NSWorkspace</code>のアプリ切り替え通知を購読し、<b>自分がアクティブな間だけ最前面、
-  それ以外は通常レベル</b>に切り替えるようにした。
+  「常に最前面」は便利ですが、他のアプリを操作しているときまでFloatPlayerが手前に居座るのは
+  邪魔になります。そこで<code>NSWorkspace</code>(実行中のアプリの一覧やアクティブなアプリなど、
+  macOS全体の状態を扱うためのクラス)が発行する「アプリ切り替え通知」を購読し、<b>自分が
+  アクティブな間だけ最前面、それ以外は通常レベル</b>に切り替えるようにしました。
+  <code>NotificationCenter</code>(通知センター)は、Combineの<code>@Published</code>/<code>sink</code>
+  (<a href="01_swift_appkit_fundamentals.html#ch2">Swift基礎編2章</a>)よりも古くからAppKitにある、
+  同じ「何かが起きたら知らせる」仕組みです。考え方はCombineとよく似ていますが、より広い範囲
+  (システム全体のイベントなど)に向けて使われます。
 </p>
 <pre><code>NSWorkspace.shared.notificationCenter.addObserver(
     self,
@@ -231,17 +266,18 @@ hosting.sizingOptions = []</code></pre>
 }</code></pre>
 <p>
   <code>NSWorkspace.didActivateApplicationNotification</code>は、自分を含む<b>どのアプリがアクティブになっても</b>
-  発火する。<code>userInfo</code>から<code>NSRunningApplication</code>を取り出し、
-  そのプロセスIDが自分自身のもの(<code>ProcessInfo.processInfo.processIdentifier</code>)かどうかで、
-  「今アクティブなのは自分か、他のアプリか」を判定している。
+  発火します。<code>userInfo</code>から<code>NSRunningApplication</code>(今アクティブになったアプリの情報)を
+  取り出し、その<b>プロセスID</b>(OSが実行中のプログラム(プロセス)それぞれに割り振る、重複しない
+  識別番号)が自分自身のもの(<code>ProcessInfo.processInfo.processIdentifier</code>)かどうかで、
+  「今アクティブなのは自分か、他のアプリか」を判定しています。
 </p>
 
 <h2 id="ch7">7. 機能: スクリーンショットの自動フローティングウィンドウ</h2>
 <p>
   <a href="01_swift_appkit_fundamentals.html">Swift基礎編</a>で扱った<code>ScreenshotWatcher</code>が
   新しいスクリーンショットを検知すると、<code>ScreenshotFloatWindow</code>が「UIなし・画像だけ」の
-  小さなフローティングウィンドウを画面に浮かべる。メインのプレイヤーパネルとは別に、
-  もう1つ<code>NSPanel</code>を使う実装なので、設定内容を比較しながら見ておく。
+  小さなフローティングウィンドウを画面に浮かべます。メインのプレイヤーパネルとは別に、
+  もう1つ<code>NSPanel</code>を使う実装なので、設定内容を比較しながら見ていきます。
 </p>
 <pre><code>let newPanel = NSPanel(
     contentRect: NSRect(origin: Self.nextSpawnPoint(), size: size),
@@ -269,20 +305,22 @@ newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]</code></
 <tr><td><code>.canJoinAllSpaces</code></td><td>Mission Controlのどのデスクトップ(Space)に切り替えても付いてくる</td></tr>
 </table></div>
 <p>
-  画像のドラッグ移動は、<code>NSImageView</code>ではなく自作の軽量な<code>NSView</code>サブクラスで実現している。
+  画像のドラッグ移動は、<code>NSImageView</code>ではなく自作の軽量な<code>NSView</code>サブクラスで実現しています。
   <code>NSImageView</code>は既定で「画像を他アプリへドラッグ書き出しする」機能を持っており、これが
   <code>mouseDown</code>を横取りしてしまうため、<code>isMovableByWindowBackground</code>によるウィンドウの
-  背景ドラッグが効かなくなる。レイヤーに画像を描画するだけの自作ビューに置き換え、
-  <code>mouseDown</code>で直接<code>performDrag(with:)</code>を呼ぶことで確実に動かせるようにした。
+  背景ドラッグが効かなくなります。レイヤーに画像を描画するだけの自作ビューに置き換え、
+  <code>mouseDown</code>で直接<code>performDrag(with:)</code>を呼ぶことで確実に動かせるようにしています。
 </p>
 <pre><code>override func mouseDown(with event: NSEvent) {
     window?.performDrag(with: event)
 }</code></pre>
 <p>
-  右クリックメニュー(閉じる/保存/コピー)は自作ビューに<code>NSMenu</code>を直接持たせるだけで実現できる。
-  SwiftUIのコンテキストメニューを介さず、AppKitのビューにネイティブのメニューをそのまま生やせるのはAppKitならではの手軽さ。
-  透明度調整のスライダーは、右クリックメニューの<code>NSMenuItem.view</code>にカスタムビュー(<code>NSSlider</code>入り)を
-  差し込むことで、メニューの中に埋め込んでいる。
+  右クリックメニュー(閉じる/保存/コピー)は、自作ビューに<code>NSMenu</code>(メニューの中身を表すクラス)を
+  直接持たせるだけで実現できます。SwiftUIのコンテキストメニューという仕組みを介さなくても、AppKitのビューには
+  ネイティブのメニューをそのまま生やせる、というのがAppKitならではの手軽さです。
+  透明度調整のスライダーは、右クリックメニューの<code>NSMenuItem.view</code>(メニュー項目1つ1つに、
+  ボタンの代わりに好きなビューを差し込めるプロパティ)にカスタムビュー(<code>NSSlider</code>入り)を
+  差し込むことで、メニューの中に埋め込んでいます。
 </p>
 <pre><code>let menu = NSMenu()
 let opacityItem = NSMenuItem()
@@ -297,8 +335,8 @@ imageView.menu = menu</code></pre>
   <span class="box-title">Tips: 連続スクリーンショットが重ならないよう、出現位置をずらす</span>
   <p>
     立て続けにスクリーンショットを撮ると、フローティングウィンドウが毎回まったく同じ位置に出て
-    すべて重なってしまう。呼び出し回数を数え、6パターンの位置を斜めにずらして順番に割り当てることで、
-    複数枚を同時に見比べられるようにしている。
+    すべて重なってしまいます。呼び出し回数を数え、6パターンの位置を斜めにずらして順番に割り当てることで、
+    複数枚を同時に見比べられるようにしています。
   </p>
 <pre><code>private static var lastSpawnIndex = 0
 private static func nextSpawnPoint() -> NSPoint {
@@ -306,14 +344,19 @@ private static func nextSpawnPoint() -> NSPoint {
     let offset = CGFloat((lastSpawnIndex % 6) * 32)
     return NSPoint(x: 220 + offset, y: 420 - offset)
 }</code></pre>
+  <p>
+    <code>defer</code>は「この関数を抜ける直前に、必ずこの処理を実行する」という予約です。
+    ここでは「戻り値の計算に使う<b>前</b>の値のまま位置を計算しつつ、関数を抜けるタイミングで
+    確実にインクリメント(1増やす)する」ために使っています。
+  </p>
 </div>
 
 <h2 id="ch8">8. バグ5(最難関): .borderlessウィンドウではカーソル形状が変えられない</h2>
 <p>
   スクリーンショットのフローティングウィンドウを端からドラッグして拡大縮小できるようにしたとき、
   「端にカーソルを合わせるとカーソルの形が矢印⇔リサイズ用に変わる」という、ブラウザなどでは
-  当たり前の挙動を再現しようとして、<b>6回連続で失敗</b>した。最終的な原因は実装の細部ではなく、
-  <b>.borderlessウィンドウという選択そのもの</b>にあった。
+  当たり前の挙動を再現しようとして、<b>6回連続で失敗しました</b>。最終的な原因は実装の細部ではなく、
+  <b>.borderlessウィンドウという選択そのもの</b>にありました。
 </p>
 <div class="box bug">
   <span class="box-title">実際に踏んだバグ: 6つの方式すべてがカーソルを変えられなかった</span>
@@ -335,32 +378,32 @@ private static func nextSpawnPoint() -> NSPoint {
 </div>
 <p>
   6回目の失敗を受けて発想を変え、「メインパネルは<code>.titled</code>+<code>.resizable</code>で
-  問題なくリサイズもカーソルも機能している」という、すでに動いている実装と見比えることにした。
+  問題なくリサイズもカーソルも機能している」という、すでに動いている実装と見比えることにしました。
   結論は単純で、<b><code>NSCursor.set()</code>や<code>resetCursorRects()</code>によるカーソル制御は、
-  <code>.titled</code>のような本物のウィンドウ枠(border)を持つウィンドウでないと安定して機能しない</b>
-  ——<code>.borderless</code>ウィンドウでは、標準のカーソル制御機構そのものに乗れていなかった。
+  <code>.titled</code>のような本物のウィンドウ枠(border)を持つウィンドウでないと安定して機能しません</b>
+  ——<code>.borderless</code>ウィンドウでは、標準のカーソル制御機構そのものに乗れていませんでした。
 </p>
 <p>
   そこで、リサイズを自前のmouseDown/mouseDragged判定で実装するのをやめ、7章の通り
-  <code>.titled</code> + <code>.resizable</code>にタイトルバーを透明・非表示にする方式へ切り替えた。
+  <code>.titled</code> + <code>.resizable</code>にタイトルバーを透明・非表示にする方式へ切り替えました。
   すると、自前のコードを1行も書かずに、AppKit標準のedge-dragリサイズとカーソル形状の変更が
-  そのまま正しく動くようになった。
+  そのまま正しく動くようになりました。
 </p>
 <div class="box hands-on">
   <span class="box-title">教訓: 「動いている実装との差分」から疑う</span>
   <p>
     6回の試行はすべて「カーソル制御の実装方法」を変える方向の修正で、いずれも症状の一部にしか
-    効かなかった。実際の原因は実装方法ではなく<b>styleMaskの選択(.borderless vs .titled)</b>という、
-    もっと手前の前提にあった。原因不明のバグが同じ機能の別実装(この場合はメインパネル)で
+    効きませんでした。実際の原因は実装方法ではなく<b>styleMaskの選択(.borderless vs .titled)</b>という、
+    もっと手前の前提にありました。原因不明のバグが同じ機能の別実装(この場合はメインパネル)で
     起きていないなら、両者の設定の差分を突き合わせるほうが、個別の対症療法を繰り返すより早い。
   </p>
 </div>
 <p>
   なお、<code>.titled</code>+<code>.resizable</code>にしたことで、縦横比を保ったまま拡大縮小する
-  <code>NSWindow.contentAspectRatio</code>も使えるようになった。ただし今回は「画像を自由に伸び縮みさせたい」
-  という要望だったため、あえて設定していない。画像側も<code>CALayer.contentsGravity</code>を
+  <code>NSWindow.contentAspectRatio</code>も使えるようになりました。ただし今回は「画像を自由に伸び縮みさせたい」
+  という要望だったため、あえて設定していません。画像側も<code>CALayer.contentsGravity</code>を
   縦横比を保つ<code>.resizeAspect</code>ではなく、枠に合わせて引き伸ばす<code>.resize</code>にすることで、
-  ウィンドウの変形に画像そのものが追従するようにしている。
+  ウィンドウの変形に画像そのものが追従するようにしています。
 </p>
 
 <h2 id="summary">まとめ: 5つのバグと直し方</h2>

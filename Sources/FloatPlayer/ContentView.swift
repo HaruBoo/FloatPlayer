@@ -5,10 +5,13 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @ObservedObject var viewModel: MediaViewModel
 
+    // UIを隠している時と全画面表示中は、どちらもバー類を消す
+    private var barsHidden: Bool { viewModel.isUIHidden || viewModel.isFullscreen }
+
     var body: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
-                if !viewModel.isUIHidden {
+                if !barsHidden {
                     topBar
                         .background(DragHandle())
                         .opacity(viewModel.uiOpacity)
@@ -30,7 +33,7 @@ struct ContentView: View {
                         return true
                     }
 
-                if !viewModel.isUIHidden {
+                if !barsHidden {
                     Divider().opacity(0.3 * viewModel.uiOpacity)
 
                     bottomBar
@@ -40,14 +43,18 @@ struct ContentView: View {
             // バーごとに背景を分けず、1枚のマテリアルにして段差をなくす
             .background(.regularMaterial.opacity(viewModel.uiOpacity))
 
-            if viewModel.isUIHidden {
-                // UIを隠している間もウィンドウを動かせるように、上端に細い帯だけ残す
+            if viewModel.isUIHidden && !viewModel.isFullscreen {
+                // UIを隠している間もウィンドウを動かせるように、上端に細い帯だけ残す。
+                // 全画面表示中はウィンドウ自体を動かす必要が無いので出さない
                 Color.clear
                     .frame(height: 10)
                     .frame(maxWidth: .infinity)
                     .background(DragHandle())
             }
         }
+        // Escキーでの全画面解除はAppDelegate側(FloatPlayerPanel.cancelOperation)で処理している。
+        // ここでも.onExitCommandを使うとNSPanel標準のキャンセル(クローズ)動作と二重に発火し、
+        // パネルが閉じて消えてしまっていた
     }
 
     private var topBar: some View {
@@ -61,6 +68,14 @@ struct ContentView: View {
             .frame(width: 200)
 
             Spacer(minLength: 20)
+
+            Button {
+                viewModel.isFullscreen = true
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+            }
+            .buttonStyle(.borderless)
+            .help("全画面表示(Escキーで終了)")
         }
         .padding(8)
     }

@@ -55,6 +55,9 @@ final class MediaViewModel: ObservableObject {
     @Published var uiOpacity: Double = 1.0 // 上下バーなどUIの透明度
     @Published var isClickThrough: Bool = false
     @Published var isUIHidden: Bool = false
+    // 本来のYouTubeのように、UIを消して画面いっぱいに表示する全画面モード。
+    // AppDelegate側がこれを購読してパネル自体を画面サイズにリサイズする
+    @Published var isFullscreen: Bool = false
 
     // スクショ関連の自動フローティング設定。AppDelegate側がこれを購読して
     // 実際のウォッチャーを起動/停止する(状態はここに集約し、AppKit側は反映するだけにする)

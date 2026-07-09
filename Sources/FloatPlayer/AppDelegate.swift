@@ -2,9 +2,21 @@ import AppKit
 import Combine
 import SwiftUI
 
+/// メインパネル用のNSPanelサブクラス。
+/// Escキーは既定でNSPanelの「キャンセル」動作(実質クローズ)にひもづいており、
+/// 全画面表示の解除と一緒にパネル自体が閉じて消えてしまっていた。
+/// cancelOperationを乗っ取ることで、Escの意味を完全にこちらで制御する
+final class FloatPlayerPanel: NSPanel {
+    var onCancelOperation: (() -> Void)?
+
+    override func cancelOperation(_ sender: Any?) {
+        onCancelOperation?()
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private var panel: NSPanel!
+    private var panel: FloatPlayerPanel!
     private var statusItem: NSStatusItem!
     private var clickThroughMenuItem: NSMenuItem!
     private var uiHiddenMenuItem: NSMenuItem!
@@ -29,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // addLocalMonitorForEventsの戻り値(モニターの実体)。保持しないとARCで即座に
     // 解放され、モニターが機能しなくなる
     private var rightClickMonitor: Any?
+    // 全画面表示に入る前のパネルのframe。Escで抜けた時に元の位置・サイズへ戻すために保持する
+    private var frameBeforeFullscreen: NSRect?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // macOSの自動終了/サドンターミネーション機構がこのアプリを
@@ -110,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hosting.layer?.cornerRadius = 12
         hosting.layer?.masksToBounds = true
 
-        let newPanel = NSPanel(
+        let newPanel = FloatPlayerPanel(
             contentRect: NSRect(x: 200, y: 200, width: 420, height: 280),
             // .closable/.miniaturizableを付けないと赤(閉じる)・黄(しまう)の
             // トラフィックライトボタンが表示だけされて無効化(グレーアウト)されてしまう
@@ -118,6 +132,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             backing: .buffered,
             defer: false
         )
+        // Escキーを押すとNSPanel標準の「キャンセル(=閉じる)」動作が働き、
+        // SwiftUI側の.onExitCommandによる全画面解除と同時にパネル自体が
+        // 閉じて消えてしまっていた。cancelOperationを乗っ取り、全画面表示中なら
+        // それを解除するだけにして、標準のキャンセル(クローズ)は発生させない
+        newPanel.onCancelOperation = { [weak self] in
+            guard let self else { return }
+            if self.viewModel.isFullscreen {
+                self.viewModel.isFullscreen = false
+            }
+        }
         newPanel.titleVisibility = .hidden
         newPanel.titlebarAppearsTransparent = true
         newPanel.isMovableByWindowBackground = false // DragHandleでドラッグを制御する
@@ -136,6 +160,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // .regularポリシーだと既定でウィンドウの状態復元が働き、
         // 手動でリサイズした過去のフレームを次回起動時に引きずることがあるため無効化する
         newPanel.isRestorable = false
+
+        // 緑の信号機ボタンを独自の全画面表示のトグルに割り当てる。
+        // クラッシュの根本原因はEscの二重処理(FloatPlayerPanel.cancelOperationで解消済み)
+        // だったため、ボタン自体の割り当ては安全に行える
+        if let zoomButton = newPanel.standardWindowButton(.zoomButton) {
+            zoomButton.target = self
+            zoomButton.action = #selector(toggleFullscreen)
+        }
 
         newPanel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -274,6 +306,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(uiHiddenItem)
         panelUIHiddenItem = uiHiddenItem
 
+        let fullscreenItem = NSMenuItem(title: "全画面表示(Escで終了)", action: #selector(enterFullscreen), keyEquivalent: "")
+        fullscreenItem.target = self
+        menu.addItem(fullscreenItem)
+
         menu.addItem(.separator())
 
         let mediaOpacityItem = NSMenuItem()
@@ -345,6 +381,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
+        viewModel.$isFullscreen
+            .receive(on: RunLoop.main)
+            .sink { [weak self] fullscreen in
+                self?.updateFullscreen(fullscreen)
+            }
+            .store(in: &cancellables)
+
         viewModel.$isScreenshotWatcherEnabled
             .receive(on: RunLoop.main)
             .sink { [weak self] enabled in
@@ -392,6 +435,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         chaptersMenuItem.submenu = submenu
         chaptersMenuItem.isEnabled = true
+    }
+
+    // 本来のYouTubeなどと同じく、UIを消して画面いっぱいに表示する。
+    // macOS標準のフルスクリーン(Spaces切り替えを伴う)は使わず、パネル自体を
+    // 画面のフレームまでリサイズするだけの簡易な方式にしている
+    private func updateFullscreen(_ fullscreen: Bool) {
+        guard let panel else { return }
+        if fullscreen {
+            guard frameBeforeFullscreen == nil else { return }
+            frameBeforeFullscreen = panel.frame
+            let screenFrame = panel.screen?.frame ?? NSScreen.main?.frame ?? panel.frame
+            panel.setFrame(screenFrame, display: true, animate: true)
+        } else {
+            guard let previousFrame = frameBeforeFullscreen else { return }
+            frameBeforeFullscreen = nil
+            panel.setFrame(previousFrame, display: true, animate: true)
+        }
     }
 
     @objc private func showPanel() {
@@ -457,6 +517,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleUIHidden() {
         viewModel.isUIHidden.toggle()
+    }
+
+    @objc private func enterFullscreen() {
+        viewModel.isFullscreen = true
+    }
+
+    // 緑の信号機ボタンは常時クリックできてしまうため、enterFullscreenのように
+    // 「入るだけ」だと2回目のクリックで戻せなくなる。ボタン用にはトグル版を使う
+    @objc private func toggleFullscreen() {
+        viewModel.isFullscreen.toggle()
     }
 
     @objc private func jumpToChapter(_ sender: NSMenuItem) {

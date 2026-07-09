@@ -13,6 +13,10 @@ struct YouTubeWebView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         // ミュートなしの自動再生を許可(自分専用アプリのため)
         config.mediaTypesRequiringUserActionForPlayback = []
+        // YouTube Player本体の再生状態(再生中/一時停止など)をJS側から受け取るためのブリッジ。
+        // これが無いと「離れる前に自分で一時停止していたか」をSwift側から知る術がなく、
+        // モード復帰時に常に再生を再開してしまっていた
+        config.userContentController.add(context.coordinator, name: "fpState")
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.underPageBackgroundColor = .clear
         context.coordinator.attach(webView)
@@ -25,14 +29,21 @@ struct YouTubeWebView: NSViewRepresentable {
 
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.pauseAllMediaPlayback(completionHandler: nil)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "fpState")
     }
 
     @MainActor
-    final class Coordinator {
+    final class Coordinator: NSObject, WKScriptMessageHandler {
         private weak var viewModel: MediaViewModel?
         private weak var webView: WKWebView?
         private var loadedVideoID: String?
         private var cancellables = Set<AnyCancellable>()
+        // YT.PlayerStateの実際の値をJS側のonStateChangeから受け取って追跡する。
+        // 1 = YT.PlayerState.PLAYING
+        private var isActuallyPlaying = false
+        // 他モードへ離れる直前に実際に再生中だったかどうか。
+        // これがtrueの時だけ、YouTubeモードに戻った時に再生を再開する
+        private var wasPlayingBeforeLeaving = false
 
         init(viewModel: MediaViewModel) {
             self.viewModel = viewModel
@@ -42,12 +53,21 @@ struct YouTubeWebView: NSViewRepresentable {
             self.webView = webView
             guard let viewModel, cancellables.isEmpty else { return }
 
-            // 他モードに切り替えたら一時停止、YouTubeに戻したら続きから再開する
+            // 他モードに切り替えたら一時停止し、YouTubeに戻したら「離れる前に実際に
+            // 再生中だった場合だけ」再開する。ユーザー自身が一時停止していた場合まで
+            // 勝手に再生を再開してしまわないようにするための分岐
             viewModel.$mode
                 .dropFirst()
                 .sink { [weak self] mode in
                     guard let self, self.loadedVideoID != nil else { return }
-                    self.run(mode == .youtube ? "fpPlay();" : "fpPause();")
+                    if mode == .youtube {
+                        if self.wasPlayingBeforeLeaving {
+                            self.run("fpPlay();")
+                        }
+                    } else {
+                        self.wasPlayingBeforeLeaving = self.isActuallyPlaying
+                        self.run("fpPause();")
+                    }
                 }
                 .store(in: &cancellables)
 
@@ -57,6 +77,11 @@ struct YouTubeWebView: NSViewRepresentable {
                     self?.run("fpSeek(\(seconds));")
                 }
                 .store(in: &cancellables)
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "fpState", let state = message.body as? Int else { return }
+            isActuallyPlaying = (state == 1) // YT.PlayerState.PLAYING
         }
 
         func loadVideoIfNeeded(videoID: String?) {
@@ -80,7 +105,12 @@ struct YouTubeWebView: NSViewRepresentable {
               function onYouTubeIframeAPIReady() {
                 player = new YT.Player('player', {
                   videoId: '\(videoID)',
-                  playerVars: { autoplay: 1, playsinline: 1, loop: 1, playlist: '\(videoID)' }
+                  playerVars: { autoplay: 1, playsinline: 1, loop: 1, playlist: '\(videoID)' },
+                  events: {
+                    onStateChange: function(e) {
+                      window.webkit.messageHandlers.fpState.postMessage(e.data);
+                    }
+                  }
                 });
               }
               function fpPause() { if (player && player.pauseVideo) player.pauseVideo(); }

@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panel: NSPanel!
     private var statusItem: NSStatusItem!
     private var clickThroughMenuItem: NSMenuItem!
@@ -17,6 +17,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardWatcher: ClipboardImageWatcher?
     private var floatingScreenshots: [ScreenshotFloatWindow] = []
 
+    // パネル上の右クリックメニュー(ステータスバーのメニューとは別インスタンス)。
+    // 開くたびにmenuWillOpenでチェック状態・スライダーの値を最新化する
+    private var panelContextMenu: NSMenu!
+    private var panelClickThroughItem: NSMenuItem!
+    private var panelUIHiddenItem: NSMenuItem!
+    private var panelScreenshotItem: NSMenuItem!
+    private var panelClipboardItem: NSMenuItem!
+    private var panelMediaOpacitySlider: SliderMenuItemView!
+    private var panelUIOpacitySlider: SliderMenuItemView!
+    // addLocalMonitorForEventsの戻り値(モニターの実体)。保持しないとARCで即座に
+    // 解放され、モニターが機能しなくなる
+    private var rightClickMonitor: Any?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // macOSの自動終了/サドンターミネーション機構がこのアプリを
         // アイドルな裏方アプリと誤認して勝手にterminate:するのを防ぐ
@@ -27,14 +40,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPanel()
         setupStatusItem()
         bindViewModel()
-
-        let watcher = ScreenshotWatcher { [weak self] url in
-            guard let image = NSImage(contentsOf: url) else { return }
-            self?.showFloatingScreenshot(image: image)
-        }
-        watcher.start()
-        screenshotWatcher = watcher
-        screenshotWatcherMenuItem?.state = .on
     }
 
     // 部分スクリーンショットなどで新しい画像がスクリーンショット保存先フォルダに
@@ -90,6 +95,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupPanel() {
+        // これまでメニューバーのステータスアイコンからしか変更できなかった設定を、
+        // パネル上の右クリック(トラックパッドは2本指クリック)からも変更できるようにする。
+        // メニュー自体はinstallPanelRightClickOverride内でウィンドウ全体のrightMouseDownを
+        // 横取りして表示する(ボタンやWebViewの上でも同じメニューが開くようにするため)
+        let contextMenu = buildPanelContextMenu()
         let hosting = NSHostingView(rootView: ContentView(viewModel: viewModel))
         // NSHostingViewは既定でSwiftUI側の理想サイズ(fittingSize)に合わせて
         // ウィンドウ自体をリサイズしてしまう。ウィンドウサイズは自分たちで管理したいので無効化する
@@ -132,6 +142,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = newPanel
 
         observeAppActivation()
+        installPanelRightClickOverride(menu: contextMenu)
+    }
+
+    // ボタンやYouTubeのWebViewなど、実際のUI部品の上で右クリックしても
+    // (その部品自身がクリックを処理してしまい)設定メニューが出なかったため、
+    // ウィンドウ内のrightMouseDownをここで横取りし、パネル上のどこでも
+    // 同じ設定メニューが開くようにする。ブラウザがUI上のどこを右クリックしても
+    // 何かしらのメニューが出るのと同じ体験にするための対応
+    private func installPanelRightClickOverride(menu: NSMenu) {
+        // 戻り値(モニターの実体)をプロパティに保持しておかないと、ARCによって
+        // この関数を抜けた直後に解放され、モニターが実質的に機能しなくなる
+        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            guard let self, event.window === self.panel, let contentView = self.panel.contentView else {
+                return event
+            }
+            NSMenu.popUpContextMenu(menu, with: event, for: contentView)
+            return nil // 元のビュー(WebViewやテキストフィールド)に渡さず、ここで処理を終える
+        }
     }
 
     // 自分がアクティブな間だけ最前面(.floating)に浮かせ、
@@ -228,6 +256,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
     }
 
+    // ステータスバーのメニューと同じ設定項目に加えて、透明度スライダーを埋め込む。
+    // SwiftUIの.contextMenu内のSliderはNSMenuItemへの変換で機能しなかったため、
+    // NSMenuItem.viewに直接NSSliderを持たせるAppKitネイティブの方式にしている
+    // (ScreenshotFloatWindowの右クリックメニューと同じ手法)
+    private func buildPanelContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
+
+        let clickThroughItem = NSMenuItem(title: "クリックスルー", action: #selector(toggleClickThrough), keyEquivalent: "")
+        clickThroughItem.target = self
+        menu.addItem(clickThroughItem)
+        panelClickThroughItem = clickThroughItem
+
+        let uiHiddenItem = NSMenuItem(title: "UIを隠す", action: #selector(toggleUIHidden), keyEquivalent: "")
+        uiHiddenItem.target = self
+        menu.addItem(uiHiddenItem)
+        panelUIHiddenItem = uiHiddenItem
+
+        menu.addItem(.separator())
+
+        let mediaOpacityItem = NSMenuItem()
+        let mediaSlider = SliderMenuItemView(title: "映像の透明度", value: viewModel.mediaOpacity, range: 0.15...1.0) { [weak self] value in
+            self?.viewModel.mediaOpacity = value
+        }
+        mediaOpacityItem.view = mediaSlider
+        menu.addItem(mediaOpacityItem)
+        panelMediaOpacitySlider = mediaSlider
+
+        let uiOpacityItem = NSMenuItem()
+        let uiSlider = SliderMenuItemView(title: "UIの透明度", value: viewModel.uiOpacity, range: 0.15...1.0) { [weak self] value in
+            self?.viewModel.uiOpacity = value
+        }
+        uiOpacityItem.view = uiSlider
+        menu.addItem(uiOpacityItem)
+        panelUIOpacitySlider = uiSlider
+
+        menu.addItem(.separator())
+
+        let pastePhotoItem = NSMenuItem(title: "スクリーンショットを貼り付け", action: #selector(pastePhoto), keyEquivalent: "")
+        pastePhotoItem.target = self
+        menu.addItem(pastePhotoItem)
+
+        let screenshotItem = NSMenuItem(title: "スクショを自動でフローティング表示", action: #selector(toggleScreenshotWatcher), keyEquivalent: "")
+        screenshotItem.target = self
+        menu.addItem(screenshotItem)
+        panelScreenshotItem = screenshotItem
+
+        let clipboardItem = NSMenuItem(title: "クリップボードの画像も自動でフローティング表示", action: #selector(toggleClipboardWatcher), keyEquivalent: "")
+        clipboardItem.target = self
+        menu.addItem(clipboardItem)
+        panelClipboardItem = clipboardItem
+
+        panelContextMenu = menu
+        return menu
+    }
+
+    // 開かれる直前に、チェック状態とスライダーの値を現在のviewModelの内容へ最新化する。
+    // ステータスバー側や別経路(パネル下部のUI)での変更もここで反映される
+    func menuWillOpen(_ menu: NSMenu) {
+        guard menu === panelContextMenu else { return }
+        panelClickThroughItem.state = viewModel.isClickThrough ? .on : .off
+        panelUIHiddenItem.state = viewModel.isUIHidden ? .on : .off
+        panelUIHiddenItem.title = viewModel.isUIHidden ? "UIを表示" : "UIを隠す"
+        panelScreenshotItem.state = viewModel.isScreenshotWatcherEnabled ? .on : .off
+        panelClipboardItem.state = viewModel.isClipboardWatcherEnabled ? .on : .off
+        panelMediaOpacitySlider.setValue(viewModel.mediaOpacity)
+        panelUIOpacitySlider.setValue(viewModel.uiOpacity)
+    }
+
     private func bindViewModel() {
         // windowOpacityは上下バーの背景(ContentView側)だけに使う。
         // 映像/写真自体まで薄くしたくないので、パネル全体のalphaValueは常に1.0のまま。
@@ -245,6 +342,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] hidden in
                 self?.uiHiddenMenuItem.state = hidden ? .on : .off
                 self?.uiHiddenMenuItem.title = hidden ? "UIを表示" : "UIを隠す"
+            }
+            .store(in: &cancellables)
+
+        viewModel.$isScreenshotWatcherEnabled
+            .receive(on: RunLoop.main)
+            .sink { [weak self] enabled in
+                self?.updateScreenshotWatcher(enabled: enabled)
+            }
+            .store(in: &cancellables)
+
+        viewModel.$isClipboardWatcherEnabled
+            .receive(on: RunLoop.main)
+            .sink { [weak self] enabled in
+                self?.updateClipboardWatcher(enabled: enabled)
             }
             .store(in: &cancellables)
 
@@ -293,37 +404,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewModel.pastePhotoFromClipboard()
     }
 
-    @objc private func toggleScreenshotWatcher() {
-        if let watcher = screenshotWatcher {
-            watcher.stop()
+    // 実際のウォッチャーの起動/停止とメニューのチェック状態反映は、
+    // viewModel.isScreenshotWatcherEnabled購読(bindViewModel)からここに集約している。
+    // これにより、ステータスバーのメニューだけでなく、パネルの右クリックメニューからの
+    // 変更でも同じ経路で反映される
+    private func updateScreenshotWatcher(enabled: Bool) {
+        screenshotWatcherMenuItem?.state = enabled ? .on : .off
+        guard enabled else {
+            screenshotWatcher?.stop()
             screenshotWatcher = nil
-            screenshotWatcherMenuItem.state = .off
-        } else {
-            let watcher = ScreenshotWatcher { [weak self] url in
-                guard let image = NSImage(contentsOf: url) else { return }
-                self?.showFloatingScreenshot(image: image)
-            }
-            watcher.start()
-            screenshotWatcher = watcher
-            screenshotWatcherMenuItem.state = .on
+            return
         }
+        guard screenshotWatcher == nil else { return }
+        let watcher = ScreenshotWatcher { [weak self] url in
+            guard let image = NSImage(contentsOf: url) else { return }
+            self?.showFloatingScreenshot(image: image)
+        }
+        watcher.start()
+        screenshotWatcher = watcher
     }
 
     // 既定ではオフ。どんな画像コピーにも反応してしまうため、
     // 「保存せずコピーだけのスクショ」も浮かせたい人向けの追加機能として提供する
-    @objc private func toggleClipboardWatcher() {
-        if let watcher = clipboardWatcher {
-            watcher.stop()
+    private func updateClipboardWatcher(enabled: Bool) {
+        clipboardWatcherMenuItem?.state = enabled ? .on : .off
+        guard enabled else {
+            clipboardWatcher?.stop()
             clipboardWatcher = nil
-            clipboardWatcherMenuItem.state = .off
-        } else {
-            let watcher = ClipboardImageWatcher { [weak self] image in
-                self?.showFloatingScreenshot(image: image)
-            }
-            watcher.start()
-            clipboardWatcher = watcher
-            clipboardWatcherMenuItem.state = .on
+            return
         }
+        guard clipboardWatcher == nil else { return }
+        let watcher = ClipboardImageWatcher { [weak self] image in
+            self?.showFloatingScreenshot(image: image)
+        }
+        watcher.start()
+        clipboardWatcher = watcher
+    }
+
+    @objc private func toggleScreenshotWatcher() {
+        viewModel.isScreenshotWatcherEnabled.toggle()
+    }
+
+    @objc private func toggleClipboardWatcher() {
+        viewModel.isClipboardWatcherEnabled.toggle()
     }
 
     // クリックスルー中はパネル自身のトグルUIも押せなくなるため、
@@ -343,5 +466,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
+    }
+}
+
+/// 右クリックメニューにラベル付きの透明度スライダーを埋め込むためのビュー。
+/// NSMenuはSwiftUIのContextMenu経由だとSliderのような操作可能なコントロールを
+/// 描画できないため、NSMenuItem.viewに直接NSSliderを持たせるAppKitネイティブの
+/// 方式にしている(ScreenshotFloatWindowのOpacityMenuItemViewと同じ考え方)。
+private final class SliderMenuItemView: NSView {
+    private let slider: NSSlider
+    private var onChange: ((Double) -> Void)?
+
+    init(title: String, value: Double, range: ClosedRange<Double>, onChange: @escaping (Double) -> Void) {
+        slider = NSSlider(value: value, minValue: range.lowerBound, maxValue: range.upperBound, target: nil, action: nil)
+        super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 42))
+
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        label.frame = NSRect(x: 14, y: 24, width: 192, height: 14)
+        addSubview(label)
+
+        slider.frame = NSRect(x: 14, y: 4, width: 192, height: 20)
+        slider.target = self
+        slider.action = #selector(sliderChanged(_:))
+        addSubview(slider)
+
+        self.onChange = onChange
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // メニューが開かれるたびに、現在のviewModelの値へ合わせ直す
+    func setValue(_ value: Double) {
+        slider.doubleValue = value
+    }
+
+    @objc private func sliderChanged(_ sender: NSSlider) {
+        onChange?(sender.doubleValue)
     }
 }

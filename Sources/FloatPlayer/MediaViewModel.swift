@@ -56,6 +56,11 @@ final class MediaViewModel: ObservableObject {
     @Published var isClickThrough: Bool = false
     @Published var isUIHidden: Bool = false
 
+    // スクショ関連の自動フローティング設定。AppDelegate側がこれを購読して
+    // 実際のウォッチャーを起動/停止する(状態はここに集約し、AppKit側は反映するだけにする)
+    @Published var isScreenshotWatcherEnabled: Bool = true
+    @Published var isClipboardWatcherEnabled: Bool = false
+
     // チャプター(YouTube Data API v3を使用)
     @Published var apiKey: String = UserDefaults.standard.string(forKey: "youtubeAPIKey") ?? "" {
         didSet { UserDefaults.standard.set(apiKey, forKey: "youtubeAPIKey") }

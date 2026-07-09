@@ -163,7 +163,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // 緑の信号機ボタンを独自の全画面表示のトグルに割り当てる。
         // クラッシュの根本原因はEscの二重処理(FloatPlayerPanel.cancelOperationで解消済み)
-        // だったため、ボタン自体の割り当ては安全に行える
+        // だったため、ボタン自体の割り当ては安全に行える。
+        // 見た目は標準ボタンのまま(自作ボタンに置き換えると小さく見づらかったため)、
+        // クリック先だけ差し替えている
         if let zoomButton = newPanel.standardWindowButton(.zoomButton) {
             zoomButton.target = self
             zoomButton.action = #selector(toggleFullscreen)

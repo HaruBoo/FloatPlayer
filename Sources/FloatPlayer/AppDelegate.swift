@@ -79,6 +79,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         false
     }
 
+    // 赤信号機ボタンでパネルを閉じた後や、他ウィンドウの陰に隠れて見失った後に、
+    // Dockアイコンをクリックしても何も起きない(=「ウィンドウが消えた」ように見える)問題への対応。
+    // .nonactivatingPanelスタイルのウィンドウは、通常のウィンドウと違って
+    // Dockアイコンクリック時の「再度開く」という標準動作の対象に含まれないため、
+    // このデリゲートメソッドを実装して明示的にパネルを呼び戻す
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showPanel()
+        return true
+    }
+
     // メニューバーを持たないアクセサリアプリのままだと、Cmd+C/V/X/Aなどの
     // 標準編集ショートカットがテキストフィールドまで正しくルーティングされない。
     // 表示はされない最小限のEditメニューを用意し、キー等価物の解決先を与える。

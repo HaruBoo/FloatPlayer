@@ -272,6 +272,32 @@ hosting.sizingOptions = []</code></pre>
   「今アクティブなのは自分か、他のアプリか」を判定しています。
 </p>
 
+<div class="box tip">
+  <span class="box-title">Tips: 「常に最前面に固定」で自動切り替えを一時的に上書きする</span>
+  <p>
+    この自動切り替えは便利ですが、動画を見ながら他のアプリでメモを取りたい時など、
+    「他アプリを操作中でも最前面のままにしたい」場面もあります。そこで、右クリックメニューから
+    切り替えられる<code>isPinnedOnTop</code>という設定値を1つ追加し、<code>handleAppActivation</code>の
+    先頭に早期リターン(それ以降の処理を行わずに関数を抜けること)を差し込みました。
+  </p>
+<pre><code>@objc private func handleAppActivation(_ note: Notification) {
+    // 固定がオンの間は、他アプリがアクティブになってもレベルを下げない
+    guard !viewModel.isPinnedOnTop else { return }
+    guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey]
+        as? NSRunningApplication else { return }
+    panel.level = app.processIdentifier == ProcessInfo.processInfo.processIdentifier
+        ? .floating : .normal
+}</code></pre>
+  <p>
+    ただしこれだけでは「固定をオンにした瞬間」には反映されません(次に他アプリがアクティブに
+    なるまで<code>handleAppActivation</code>自体が呼ばれないため)。そこで<code>isPinnedOnTop</code>の
+    変化をCombineで購読し、オンにした瞬間に<code>panel.level = .floating</code>を即座に
+    適用するようにしています。「既存の自動処理はそのままに、先頭にガード(条件を満たさない限り
+    処理を止める仕組み)を1つ足すだけで手動オーバーライドを実現する」というこの形は、
+    既にある自動化ロジックへ「一時的な人間の介入」を後から差し込みたい場面で幅広く使えます。
+  </p>
+</div>
+
 <h2 id="ch7">7. 機能: スクリーンショットの自動フローティングウィンドウ</h2>
 <p>
   <a href="01_swift_appkit_fundamentals.html">Swift基礎編</a>で扱った<code>ScreenshotWatcher</code>が

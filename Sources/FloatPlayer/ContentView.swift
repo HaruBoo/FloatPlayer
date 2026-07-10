@@ -99,7 +99,7 @@ struct ContentView: View {
 
     private var youtubeSection: some View {
         VStack(spacing: 8) {
-            if !viewModel.isUIHidden {
+            if !viewModel.isUIHidden && !viewModel.isYouTubeInputHidden {
                 HStack {
                     TextField("YouTubeのURLまたは動画ID", text: $viewModel.youtubeInput)
                         .textFieldStyle(.roundedBorder)
@@ -116,12 +116,14 @@ struct ContentView: View {
                 .padding(.horizontal, 8)
             }
 
-            if viewModel.currentVideoID != nil {
-                YouTubeWebView(viewModel: viewModel)
-                    .opacity(viewModel.mediaOpacity)
-            } else {
-                hint(text: "YouTubeのURLか動画IDを入力して「再生」を押してください")
-            }
+            // 動画が選択されていない間は、WKWebView側がYouTubeホーム画面(ログイン状態を保持)を
+            // 表示する。常時マウントしておくことで、アプリを開いた直後からホームに入れる
+            YouTubeWebView(viewModel: viewModel)
+                .opacity(viewModel.mediaOpacity)
+                // WKWebViewは(Imageのresizableのような)自身のサイズ制約を持たないため、
+                // 明示的にframeで埋めないと、内部で読み込んだページの実サイズが
+                // そのままウィンドウのサイズにまで伝播してしまう(YouTubeホーム遷移時に発覚)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

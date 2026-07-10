@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var clickThroughMenuItem: NSMenuItem!
     private var uiHiddenMenuItem: NSMenuItem!
+    private var pinnedOnTopMenuItem: NSMenuItem!
+    private var youtubeInputHiddenMenuItem: NSMenuItem!
     private var chaptersMenuItem: NSMenuItem!
     private var screenshotWatcherMenuItem: NSMenuItem!
     private var clipboardWatcherMenuItem: NSMenuItem!
@@ -34,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panelContextMenu: NSMenu!
     private var panelClickThroughItem: NSMenuItem!
     private var panelUIHiddenItem: NSMenuItem!
+    private var panelPinnedOnTopItem: NSMenuItem!
+    private var panelYouTubeInputHiddenItem: NSMenuItem!
     private var panelScreenshotItem: NSMenuItem!
     private var panelClipboardItem: NSMenuItem!
     private var panelMediaOpacitySlider: SliderMenuItemView!
@@ -209,6 +213,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func handleAppActivation(_ note: Notification) {
+        // 最前面固定がオンの間は、他アプリがアクティブになってもレベルを下げない
+        guard !viewModel.isPinnedOnTop else { return }
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
         panel.level = app.processIdentifier == ProcessInfo.processInfo.processIdentifier ? .floating : .normal
     }
@@ -232,6 +238,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         uiHiddenItem.target = self
         menu.addItem(uiHiddenItem)
         uiHiddenMenuItem = uiHiddenItem
+
+        let pinnedOnTopItem = NSMenuItem(title: "常に最前面に固定", action: #selector(togglePinnedOnTop), keyEquivalent: "")
+        pinnedOnTopItem.target = self
+        menu.addItem(pinnedOnTopItem)
+        pinnedOnTopMenuItem = pinnedOnTopItem
+
+        let youtubeInputHiddenItem = NSMenuItem(title: "YoutubeのURL、API入力欄を隠す", action: #selector(toggleYouTubeInputHidden), keyEquivalent: "")
+        youtubeInputHiddenItem.target = self
+        menu.addItem(youtubeInputHiddenItem)
+        youtubeInputHiddenMenuItem = youtubeInputHiddenItem
 
         let chaptersItem = NSMenuItem(title: "チャプター", action: nil, keyEquivalent: "")
         chaptersItem.isEnabled = false
@@ -308,6 +324,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(uiHiddenItem)
         panelUIHiddenItem = uiHiddenItem
 
+        let pinnedOnTopItem = NSMenuItem(title: "常に最前面に固定", action: #selector(togglePinnedOnTop), keyEquivalent: "")
+        pinnedOnTopItem.target = self
+        menu.addItem(pinnedOnTopItem)
+        panelPinnedOnTopItem = pinnedOnTopItem
+
+        let youtubeInputHiddenItem = NSMenuItem(title: "YoutubeのURL、API入力欄を隠す", action: #selector(toggleYouTubeInputHidden), keyEquivalent: "")
+        youtubeInputHiddenItem.target = self
+        menu.addItem(youtubeInputHiddenItem)
+        panelYouTubeInputHiddenItem = youtubeInputHiddenItem
+
         let fullscreenItem = NSMenuItem(title: "全画面表示(Escで終了)", action: #selector(enterFullscreen), keyEquivalent: "")
         fullscreenItem.target = self
         menu.addItem(fullscreenItem)
@@ -357,6 +383,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panelClickThroughItem.state = viewModel.isClickThrough ? .on : .off
         panelUIHiddenItem.state = viewModel.isUIHidden ? .on : .off
         panelUIHiddenItem.title = viewModel.isUIHidden ? "UIを表示" : "UIを隠す"
+        panelPinnedOnTopItem.state = viewModel.isPinnedOnTop ? .on : .off
+        panelYouTubeInputHiddenItem.state = viewModel.isYouTubeInputHidden ? .on : .off
+        panelYouTubeInputHiddenItem.title = viewModel.isYouTubeInputHidden ? "YoutubeのURL、API入力欄を表示" : "YoutubeのURL、API入力欄を隠す"
         panelScreenshotItem.state = viewModel.isScreenshotWatcherEnabled ? .on : .off
         panelClipboardItem.state = viewModel.isClipboardWatcherEnabled ? .on : .off
         panelMediaOpacitySlider.setValue(viewModel.mediaOpacity)
@@ -380,6 +409,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .sink { [weak self] hidden in
                 self?.uiHiddenMenuItem.state = hidden ? .on : .off
                 self?.uiHiddenMenuItem.title = hidden ? "UIを表示" : "UIを隠す"
+            }
+            .store(in: &cancellables)
+
+        viewModel.$isPinnedOnTop
+            .receive(on: RunLoop.main)
+            .sink { [weak self] pinned in
+                guard let self else { return }
+                self.pinnedOnTopMenuItem.state = pinned ? .on : .off
+                // オンにした瞬間に最前面へ、オフにした瞬間は現在アクティブかどうかで
+                // 通常のレベルに戻す(handleAppActivationの次のイベントを待たずに反映する)
+                self.panel.level = pinned ? .floating : (NSApp.isActive ? .floating : .normal)
+            }
+            .store(in: &cancellables)
+
+        viewModel.$isYouTubeInputHidden
+            .receive(on: RunLoop.main)
+            .sink { [weak self] hidden in
+                self?.youtubeInputHiddenMenuItem.state = hidden ? .on : .off
+                self?.youtubeInputHiddenMenuItem.title = hidden ? "YoutubeのURL、API入力欄を表示" : "YoutubeのURL、API入力欄を隠す"
             }
             .store(in: &cancellables)
 
@@ -519,6 +567,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleUIHidden() {
         viewModel.isUIHidden.toggle()
+    }
+
+    @objc private func togglePinnedOnTop() {
+        viewModel.isPinnedOnTop.toggle()
+    }
+
+    @objc private func toggleYouTubeInputHidden() {
+        viewModel.isYouTubeInputHidden.toggle()
     }
 
     @objc private func enterFullscreen() {

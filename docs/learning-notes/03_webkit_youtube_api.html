@@ -35,6 +35,7 @@
     <option value="#ch3">3. バグ2: エラーコード152-4 — baseURLの選び方</option>
     <option value="#ch4">4. YouTube IFrame Player APIでJS制御する</option>
     <option value="#ch5">5. YouTube Data APIでチャプターを抽出する</option>
+    <option value="#ch6">6. 動画埋め込みから「ログイン済みのYouTubeホーム」へ広げる</option>
     <option value="#summary">まとめ</option>
   </select>
 </div>
@@ -284,6 +285,193 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
   </p>
 </div>
 
+<h2 id="ch6">6. 動画埋め込みから「ログイン済みのYouTubeホーム」へ広げる</h2>
+<p>
+  ここまでの実装は「1本の動画をIFrame Player APIで再生する」ことだけが目的でした。ここからは、
+  動画が選ばれていない間や、動画内の「YouTube」ロゴをクリックした時に、<b>ログイン状態を保った
+  YouTube本体のホーム画面</b>をWKWebViewの中でそのまま表示できるようにした話です。1つのWKWebViewに
+  「自作の小さな動画プレイヤー」と「YouTube本体のブラウジング」という、性質の異なる2つの画面を
+  共存させることになるため、これまでの章より難易度の高い問題がいくつか出てきました。
+</p>
+
+<h3>6.1 新規タブを開こうとする挙動をWKUIDelegateで横取りする</h3>
+<p>
+  動画を再生すると、右下に小さな「YouTube」ロゴ(透かし)が表示されます。これは本来、クリックすると
+  YouTube本体をブラウザの新しいタブで開くためのリンクです。しかしWKWebViewには既定で
+  タブという概念がなく、<code>window.open()</code>やリンクの<code>target="_blank"</code>属性による
+  「新しいウィンドウを開いてほしい」というJavaScript側からの要求は、何も設定しなければ
+  黙って無視されます(クリックしても何も起きません)。
+</p>
+<p>
+  これを検知するのが<code>WKUIDelegate</code>というプロトコル(<a href="01_swift_appkit_fundamentals.html#ch0">Swift基礎編0章</a>
+  で説明した「約束事」)です。<code>webView(_:createWebViewWith:for:windowFeatures:)</code>という
+  メソッドを実装すると、「新しいウィンドウを開きたい」という要求が来るたびに呼び出されます。
+</p>
+<pre><code>extension YouTubeWebView.Coordinator: WKUIDelegate {
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        loadYouTubeHome()
+        return nil
+    }
+}</code></pre>
+<p>
+  ここでのポイントは<b>戻り値に<code>nil</code>を返す</b>ことです。この戻り値は「新しく作った
+  WKWebViewインスタンス」を返す場所ですが、新しいウィンドウを本当に作る代わりに<code>nil</code>を
+  返すことで「新しいウィンドウは作らない」とWebKitに伝えつつ、その中で自分で
+  <code>loadYouTubeHome()</code>(同じWebView内でYouTubeホームへ遷移させる自作メソッド)を呼んでいます。
+  「新しいものを作る代わりに、今あるものを差し替える」という発想で、新規ウィンドウ要求を
+  乗っ取っています。
+</p>
+
+<div class="box tip">
+  <span class="box-title">Tips: ログイン状態はどう保たれるか</span>
+  <p>
+    WKWebViewは既定で、Cookie(サイトがブラウザに保存させる小さなデータで、ログイン状態の
+    保持などに使われる)を<b>アプリを再起動しても消えない形</b>で保存します。特別な設定を
+    していなければ、ホーム画面上で一度ログインすれば、次回アプリを開いた時もログイン状態が
+    保たれます。ただしGoogleは「見慣れないアプリ内ブラウザからのログイン」を警戒し、
+    安全でない可能性があるとしてログインを拒否することがあります。この挙動を避けるため、
+    WKWebViewの<code>customUserAgent</code>(サイト側に「自分は何のブラウザか」を伝える文字列)を、
+    通常のSafariが送るものに近い文字列に上書きしています。
+  </p>
+<pre><code>webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"</code></pre>
+</div>
+
+<h3 id="ch6-2">6.2 「クリックしても遷移が捕まえられない」— SPAという壁</h3>
+<p>
+  ホーム画面から動画サムネイルをクリックした時も、YouTubeの(広告や関連動画付きの)本来の
+  視聴ページではなく、これまで通りの自作の埋め込みプレイヤーへ切り替えたいところです。
+  最初は<code>WKNavigationDelegate</code>の<code>decidePolicyFor navigationAction</code>という、
+  「ページ内で何らかの移動(ナビゲーション)が起きようとする直前」に呼ばれるメソッドで
+  この遷移を検知しようとしました。
+</p>
+<pre><code>func webView(
+    _ webView: WKWebView,
+    decidePolicyFor navigationAction: WKNavigationAction,
+    decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+) {
+    if navigationAction.targetFrame?.isMainFrame == true,
+       let url = navigationAction.request.url,
+       let videoID = MediaViewModel.extractYouTubeID(from: url.absoluteString) {
+        decisionHandler(.cancel) // 本来の遷移は止める
+        viewModel?.loadYouTube(videoID: videoID)
+        return
+    }
+    decisionHandler(.allow)
+}</code></pre>
+<p>
+  理屈の上では正しいコードですが、実機で動画サムネイルをクリックしてみると、このメソッドは
+  一度も呼ばれず、YouTube本来の視聴ページ(広告や検索バー付き)がそのまま表示されてしまいました。
+</p>
+<div class="box bug">
+  <span class="box-title">実際に踏んだ壁: YouTubeはページ全体を読み込み直さない</span>
+  <p>
+    現代のYouTubeのようなサイトは<b>SPA</b>(Single Page Application、単一ページアプリケーション)
+    という作り方をしています。サムネイルをクリックしても、ブラウザに「新しいページへ移動して」と
+    正式に要求するのではなく、JavaScript側で<code>history.pushState</code>という仕組み(URLの表示だけを
+    書き換え、実際のページ読み込みは発生させない機能)を使って、画面の中身だけをこっそり
+    書き換えています。<code>decidePolicyFor</code>は「本物のページ遷移」が起きようとした時にしか
+    呼ばれないため、SPAが行うこの種の「見た目だけの移動」はそもそも検知の対象外でした。
+  </p>
+</div>
+<p>
+  つまり、Swift側の「ページ遷移を横取りする」という仕組みでは、そもそも遷移という出来事自体が
+  起きていないため手も足も出ません。発想を変え、<b>もっと早い段階、クリックそのものをJavaScript側で
+  横取りする</b>方式に切り替えました。
+</p>
+
+<div class="box hands-on">
+  <span class="box-title">ハンズオン: クリックイベントをキャプチャフェーズで先取りする</span>
+  <p>
+    ブラウザのクリックイベントは、実は2つの段階に分かれて伝わります。まず一番外側の
+    <code>document</code>から実際にクリックされた要素へ向かって伝わる<b>キャプチャフェーズ</b>、
+    続いてクリックされた要素から外側へ戻っていく<b>バブリングフェーズ</b>です。YouTube自身の
+    クリック処理は、多くの場合バブリングフェーズ(通常のイベント登録方法)で行われます。
+    そこで、<code>document</code>に対してキャプチャフェーズ(第3引数に<code>true</code>を渡す)で
+    リスナーを登録すれば、<b>YouTube自身の処理より先に</b>このクリックを受け取れます。
+  </p>
+<pre><code>document.addEventListener('click', function(e) {
+  var el = e.target;
+  while (el && el.tagName !== 'A') { el = el.parentElement; }
+  if (!el || !el.href) return;
+  if (el.href.indexOf('/watch') !== -1 || el.href.indexOf('/shorts/') !== -1) {
+    e.preventDefault();   // YouTube自身の遷移(SPAの画面切り替え)を止める
+    e.stopPropagation();  // 他のリスナーにイベントが伝わるのも止める
+    window.webkit.messageHandlers.fpVideoLink.postMessage(el.href);
+  }
+}, true); // 第3引数trueがキャプチャフェーズを意味する</code></pre>
+  <p>
+    <code>e.target</code>(実際にクリックされた要素。動画サムネイルの場合、画像やその中の
+    文字など様々)から親方向に<code>&lt;a&gt;</code>タグが見つかるまで<code>while</code>ループで
+    たどり、そのリンク先(<code>el.href</code>)が動画の視聴ページ(<code>/watch</code>)や
+    ショート動画(<code>/shorts/</code>)を指していれば、<code>preventDefault()</code>と
+    <code>stopPropagation()</code>で「これ以上何もしない」ことを明示し、代わりに
+    <code>window.webkit.messageHandlers</code>(<a href="#ch4">4章</a>で登場したSwiftへのブリッジ)
+    経由でリンク先のURLをSwiftに渡しています。
+  </p>
+</div>
+<p>
+  このスクリプトは<code>WKUserScript</code>という仕組みで、ページが読み込まれるたびに
+  自動的に注入(挿入して実行)されるよう登録します。<code>injectionTime: .atDocumentStart</code>は
+  「ページの他のJavaScriptが動き出すより前に実行する」という指定で、これにより
+  YouTube自身のクリックハンドラが登録されるより先に、こちらのリスナーが仕込まれることが
+  保証されます。
+</p>
+<pre><code>let interceptScript = WKUserScript(
+    source: videoLinkInterceptJS,
+    injectionTime: .atDocumentStart,
+    forMainFrameOnly: true
+)
+config.userContentController.addUserScript(interceptScript)
+config.userContentController.add(context.coordinator, name: "fpVideoLink")</code></pre>
+<p>
+  Swift側では、このメッセージを受け取ったら動画IDだけを取り出し、<a href="#ch4">4章</a>で
+  作った埋め込みプレイヤーの読み込み処理にそのまま渡します。ネイティブの視聴ページは
+  一度も表示されないため、URLをコピー&amp;ペーストし直す手間も、埋め込み再生とネイティブ再生が
+  同時に始まってしまう二重再生も発生しません。
+</p>
+
+<h3>6.3 WKWebViewの中身の大きさがウィンドウを巨大化させる</h3>
+<p>
+  ホーム画面を表示できるようにした直後、思わぬ副作用に気づきました。ホーム画面を開いてから
+  数秒後、420×280という決まったサイズのはずのウィンドウが、突然600〜800pt四方にまで
+  膨れ上がってしまったのです。<a href="02_nswindow_deep_dive.html#ch5">NSWindow/NSPanel編5章</a>で
+  紹介した「NSHostingViewがウィンドウを巨大化させる」バグと似ていますが、あちらの修正
+  (<code>hosting.sizingOptions = []</code>)を入れているにもかかわらず再発していました。
+</p>
+<div class="box bug">
+  <span class="box-title">実際に踏んだバグ: 内側のWKWebViewだけが持つ「実サイズ」</span>
+  <p>
+    自作の小さなラッパーHTMLは<code>html,body{overflow:hidden}</code>などのCSSで意図的に
+    サイズを固定していましたが、YouTube本体のホーム画面は普通のWebサイトなので、
+    スクロールで際限なく続く実際のページの大きさを持っています。SwiftUIの
+    <code>.frame(maxWidth: .infinity, maxHeight: .infinity)</code>だけでは、WKWebView自身が
+    内部で計算する「このくらいの大きさで表示したい」という値(fittingSize)が、外側のframe指定を
+    素通りして伝わってしまうことがあり、これが最終的にウィンドウそのものを押し広げていました。
+  </p>
+</div>
+<p>
+  解決したのは、SwiftUIの<code>NSViewRepresentable</code>プロトコルが持つ
+  <code>sizeThatFits</code>という、比較的新しい(macOS 13以降の)メソッドです。これを実装すると、
+  「このビューは何ピクセルで表示したいか」をSwiftUI側から尋ねられた時に、WKWebView自身の
+  内部事情を一切無視して、<b>親から提案されたサイズをそのまま使う</b>と明示的に答えられます。
+</p>
+<pre><code>func sizeThatFits(_ proposal: ProposedViewSize, nsView: WKWebView, context: Context) -> CGSize? {
+    CGSize(width: proposal.width ?? nsView.bounds.width, height: proposal.height ?? nsView.bounds.height)
+}</code></pre>
+<p>
+  <code>proposal</code>(親のSwiftUIレイアウトから提案されたサイズ)をそのまま採用することで、
+  WKWebViewが内部でどれだけ大きなページを表示していても、外側のレイアウトには一切影響しなくなります。
+  「子ビューに実際のサイズを聞く」のではなく「親が決めたサイズを子に押し付ける」という考え方は、
+  今回のようにサイズの制御が難しい部品(WKWebViewに限らず、外部ライブラリのビューなど)を
+  SwiftUIに組み込む時に広く使える手法です。
+</p>
+
 <h2 id="summary">まとめ</h2>
 <div class="table-scroll"><table>
 <tr><th>症状/やりたいこと</th><th>原因/使ったAPI</th></tr>
@@ -292,6 +480,9 @@ webView.loadHTMLString(html, baseURL: URL(string: "https://floatplayer.local"))<
 <tr><td>再読み込みなしの一時停止/再開/シーク</td><td>YouTube IFrame Player API(YT.Player) + evaluateJavaScript</td></tr>
 <tr><td>モード切替でも再生が途切れない</td><td>ZStack + opacity(常時マウント、破棄しない)</td></tr>
 <tr><td>チャプター抽出</td><td>YouTube Data API v3 + 正規表現</td></tr>
+<tr><td>動画内リンクの新規タブ要求</td><td>WKUIDelegate.createWebViewWith を横取りしてnilを返す</td></tr>
+<tr><td>SPAのクリックがdecidePolicyForで捕まらない</td><td>WKUserScriptでキャプチャフェーズのclickリスナーを先に注入</td></tr>
+<tr><td>ホーム画面表示時にウィンドウが巨大化</td><td>NSViewRepresentable.sizeThatFitsで親提案サイズを強制</td></tr>
 </table></div>
 
 <div class="pager">

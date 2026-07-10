@@ -55,6 +55,11 @@ final class MediaViewModel: ObservableObject {
     @Published var uiOpacity: Double = 1.0 // 上下バーなどUIの透明度
     @Published var isClickThrough: Bool = false
     @Published var isUIHidden: Bool = false
+    // YouTubeのURL/APIキー入力欄だけを個別に隠すかどうか。既定は表示(false)
+    @Published var isYouTubeInputHidden: Bool = false
+    // 通常は自分がアクティブな間だけ最前面に浮き、他アプリ使用中は背面に回るが、
+    // これをオンにすると常に最前面(.floating)を維持する。AppDelegate側が購読してpanel.levelに反映する
+    @Published var isPinnedOnTop: Bool = false
     // 本来のYouTubeのように、UIを消して画面いっぱいに表示する全画面モード。
     // AppDelegate側がこれを購読してパネル自体を画面サイズにリサイズする
     @Published var isFullscreen: Bool = false
@@ -73,11 +78,17 @@ final class MediaViewModel: ObservableObject {
 
     func loadYouTube() {
         guard let id = Self.extractYouTubeID(from: youtubeInput) else { return }
+        loadYouTube(videoID: id)
+    }
+
+    /// YouTubeホーム画面(ブラウジング表示)で動画をクリックした際、URLをコピペし直す
+    /// 手間なしに、その場でクリーンな埋め込みプレイヤー再生へ切り替えるために使う
+    func loadYouTube(videoID: String) {
         chapters = []
-        currentVideoID = id
+        currentVideoID = videoID
         mode = .youtube
         isUIHidden = true // 再生開始したらUIを隠し、映像だけにする
-        fetchChapters(videoID: id)
+        fetchChapters(videoID: videoID)
     }
 
     /// チャプター選択時はURLを作り直して再読み込みするのではなく、
@@ -230,7 +241,7 @@ final class MediaViewModel: ObservableObject {
         }
 
         if host.contains("youtube.com") {
-            if url.path.contains("/embed/") {
+            if url.path.contains("/embed/") || url.path.contains("/shorts/") {
                 return url.pathComponents.last(where: { $0 != "/" })
             }
             let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)

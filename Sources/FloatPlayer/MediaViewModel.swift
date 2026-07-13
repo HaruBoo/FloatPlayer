@@ -41,6 +41,10 @@ final class MediaViewModel: ObservableObject {
     @Published var currentVideoID: String?
     /// チャプター選択時にJS経由でシークさせるための通知(再読み込みはしない)
     let seekSubject = PassthroughSubject<Int, Never>()
+    /// 動画の外側(上下バーなどアプリ自身のUI)をクリックした瞬間に送る通知。
+    /// ホバーだと意図せず触れただけで消えてしまうため、クリックした時だけ動画側の
+    /// コントロール(再生/一時停止/シークバーなど)を即座に隠す
+    let pointerLeftVideoSubject = PassthroughSubject<Void, Never>()
 
     // 写真 / スクリーンショット
     @Published var photoImage: NSImage?

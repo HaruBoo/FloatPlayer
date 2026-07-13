@@ -13,6 +13,13 @@ struct YouTubeWebView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         // ミュートなしの自動再生を許可(自分専用アプリのため)
         config.mediaTypesRequiringUserActionForPlayback = []
+        // isElementFullscreenEnabledをtrueにするとWebKit標準のフルスクリーン用に別ウィンドウが
+        // 生成されるが、このアプリの.nonactivatingPanel(フローティングパネル)とは相性が悪く、
+        // 「Click to Exit Full Screen」というプレースホルダーだけの壊れた別窓が表面に残ってしまう。
+        // そのため標準のFullscreen APIは使わず、拡大ボタンのクリックをJSで横取りして
+        // アプリ自身の全画面モード(viewModel.isFullscreen、パネル自体を画面サイズにリサイズする)
+        // を呼び出す方式にする(下のfpFullscreenメッセージハンドラとvideoFrameBridgeJSを参照)
+        config.userContentController.add(context.coordinator, name: "fpFullscreen")
         // YouTube Player本体の再生状態(再生中/一時停止など)をJS側から受け取るためのブリッジ。
         // これが無いと「離れる前に自分で一時停止していたか」をSwift側から知る術がなく、
         // モード復帰時に常に再生を再開してしまっていた
@@ -28,6 +35,21 @@ struct YouTubeWebView: NSViewRepresentable {
             forMainFrameOnly: true
         )
         config.userContentController.addUserScript(interceptScript)
+        // 動画本体(youtube.comの埋め込みiframe)の中で動くスクリプト。forMainFrameOnly: falseなので
+        // クロスオリジンのそのフレーム自身のJSコンテキストにも注入される。
+        // 1) fpHideControlsInstant()(下のトップフレーム側)からのpostMessageを受け取り、
+        //    YouTube自身が普段の無操作タイムアウト時に使っているCSSクラスをそのまま付与することで、
+        //    同じフェードアニメーションで即座に隠す。マウスが動画に戻れば、YouTube自身の
+        //    mousemove処理がこのクラスを外して元に戻すため、こちら側で「戻す」処理は不要
+        // 2) 拡大(fullscreen)ボタンのクリックをキャプチャフェーズで横取りし、YouTube自身の
+        //    (このアプリでは使えない)フルスクリーン処理も、親要素への伝播による誤った
+        //    再生/一時停止切り替えも両方止めて、Swift側にだけ通知する
+        let videoFrameBridgeScript = WKUserScript(
+            source: Coordinator.videoFrameBridgeJS,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        config.userContentController.addUserScript(videoFrameBridgeScript)
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.underPageBackgroundColor = .clear
         // 動画内のYouTubeロゴなど、新規タブ/ウィンドウを開こうとする挙動を横取りするために必要
@@ -57,6 +79,7 @@ struct YouTubeWebView: NSViewRepresentable {
         webView.pauseAllMediaPlayback(completionHandler: nil)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "fpState")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "fpVideoLink")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "fpFullscreen")
     }
 
     @MainActor
@@ -108,6 +131,16 @@ struct YouTubeWebView: NSViewRepresentable {
                 }
                 .store(in: &cancellables)
 
+            // 動画の外側(上下バーなど)をクリックした瞬間、動画側のコントロールを即座に消す。
+            // ホーム画面表示中や動画未読み込み時はfpHideControlsInstantが未定義のため
+            // 呼び出さない(呼んでも実害はないが、無意味な evaluateJavaScript を避ける)
+            viewModel.pointerLeftVideoSubject
+                .sink { [weak self] in
+                    guard let self, self.loadedVideoID != nil, !self.isShowingHome else { return }
+                    self.run("fpHideControlsInstant();")
+                }
+                .store(in: &cancellables)
+
             // アプリを開いた直後、まだ動画が選択されていなければ
             // (ログイン状態を保った)YouTubeホーム画面を最初から表示しておく。
             // makeNSView実行中の同期呼び出しだと、SwiftUI側のframe制約がまだ
@@ -131,6 +164,10 @@ struct YouTubeWebView: NSViewRepresentable {
                 guard let href = message.body as? String,
                       let videoID = MediaViewModel.extractYouTubeID(from: href) else { return }
                 viewModel?.loadYouTube(videoID: videoID)
+            case "fpFullscreen":
+                // 動画内の拡大ボタンが押された(JS側でYouTube自身のフルスクリーン処理は止めてある)。
+                // 代わりにアプリ自身の全画面モードをトグルする
+                viewModel?.isFullscreen.toggle()
             default:
                 break
             }
@@ -150,6 +187,42 @@ struct YouTubeWebView: NSViewRepresentable {
             window.webkit.messageHandlers.fpVideoLink.postMessage(el.href);
           }
         }, true);
+        """
+
+        // 埋め込みiframe自身(youtube.com側)の中で動く橋渡しスクリプト。自分がトップフレームの
+        // 場合は何もしない
+        fileprivate static let videoFrameBridgeJS = """
+        (function () {
+          if (window.top === window) { return; }
+
+          // トップフレーム(自前HTML)のfpHideControlsInstant()からのpostMessageを受け取り、
+          // YouTube自身の無操作タイムアウト用CSSクラスをその場で付与して即座に隠す
+          window.addEventListener('message', function (event) {
+            var data = event.data;
+            if (typeof data === 'string') {
+              try { data = JSON.parse(data); } catch (e) { return; }
+            }
+            if (!data || data.__fpCommand !== 'hideControlsInstant') { return; }
+            var player = document.querySelector('.html5-video-player');
+            if (player) { player.classList.add('ytp-autohide'); }
+          });
+
+          // 拡大(fullscreen)ボタンのクリックをYouTube自身のクリックハンドラより先に
+          // キャプチャフェーズで横取りする。preventDefault/stopPropagationにより、
+          // (1)このアプリでは使えないWebKit標準のFullscreen APIが呼ばれるのも、
+          // (2)処理に失敗したイベントが親要素まで伝播して動画クリック=再生/一時停止の
+          //    ハンドラが誤って反応するのも、両方まとめて防ぐ
+          document.addEventListener('click', function (e) {
+            var el = e.target;
+            while (el && !(el.classList && el.classList.contains('ytp-fullscreen-button'))) {
+              el = el.parentElement;
+            }
+            if (!el) { return; }
+            e.preventDefault();
+            e.stopPropagation();
+            window.webkit.messageHandlers.fpFullscreen.postMessage(null);
+          }, true);
+        })();
         """
 
         func loadVideoIfNeeded(videoID: String?) {
@@ -187,6 +260,15 @@ struct YouTubeWebView: NSViewRepresentable {
               function fpPause() { if (player && player.pauseVideo) player.pauseVideo(); }
               function fpPlay() { if (player && player.playVideo) player.playVideo(); }
               function fpSeek(sec) { if (player && player.seekTo) { player.seekTo(sec, true); player.playVideo(); } }
+              // YouTube本体の埋め込みiframe自身にpostMessageし、あちら側(instantHideBridgeJS)で
+              // 実際にコントロールを隠すCSSクラスを付与してもらう。iframeの中のDOMはクロス
+              // オリジンのため、このトップフレームから直接操作できないための橋渡し
+              function fpHideControlsInstant() {
+                var frame = document.querySelector('#player iframe');
+                if (frame && frame.contentWindow) {
+                  frame.contentWindow.postMessage(JSON.stringify({ __fpCommand: 'hideControlsInstant' }), '*');
+                }
+              }
             </script>
             </body></html>
             """
@@ -199,26 +281,41 @@ struct YouTubeWebView: NSViewRepresentable {
             webView?.evaluateJavaScript(js, completionHandler: nil)
         }
 
-        // 動画内のYouTubeロゴなどをクリックした際に本来は新規タブで開こうとする遷移を、
-        // 同じWebView内でYouTubeのホーム画面に置き換えて表示する
-        fileprivate func loadYouTubeHome() {
-            guard let webView, let homeURL = URL(string: "https://www.youtube.com/") else { return }
+        // 動画内のYouTubeロゴやチャンネルアイコンなどをクリックした際に本来は新規タブで
+        // 開こうとする遷移を、同じWebView内でその行き先へ置き換えて表示する
+        fileprivate func loadYouTubePage(_ url: URL) {
+            guard let webView else { return }
             isShowingHome = true
-            webView.load(URLRequest(url: homeURL))
+            webView.load(URLRequest(url: url))
+        }
+
+        fileprivate func loadYouTubeHome() {
+            guard let homeURL = URL(string: "https://www.youtube.com/") else { return }
+            loadYouTubePage(homeURL)
         }
     }
 }
 
 extension YouTubeWebView.Coordinator: WKUIDelegate {
     // window.open(target="_blank"など)で新規タブ/ウィンドウを開こうとする挙動を横取りする。
-    // 新しいWKWebViewを作らずnilを返すことで、代わりに同じWebViewをホームへ遷移させる
+    // 動画右下のYouTubeロゴは「今再生中の動画自身の視聴ページ(time_continueなどの
+    // パラメータ付きだが動画IDは同じ)」へのリンクになっているため、そのまま遷移させると
+    // 同じ動画をクリーンな埋め込みプレイヤーで最初から読み込み直すだけになり、
+    // ホームへ行かず「再読み込みされた」ように見えてしまう。リンク先の動画IDが今の
+    // 再生中動画と同じ場合はホームへ、それ以外(チャンネルアイコンなど実際に行き先が
+    // 異なる場合)だけそのURLへ、いずれも新しいWKWebViewを作らず同じWebView内で遷移させる
     func webView(
         _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        loadYouTubeHome()
+        if let url = navigationAction.request.url,
+           MediaViewModel.extractYouTubeID(from: url.absoluteString) != loadedVideoID {
+            loadYouTubePage(url)
+        } else {
+            loadYouTubeHome()
+        }
         return nil
     }
 }

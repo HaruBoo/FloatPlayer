@@ -1,4 +1,5 @@
 import AVKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -8,6 +9,13 @@ struct ContentView: View {
     // UIを隠している時と全画面表示中は、どちらもバー類を消す
     private var barsHidden: Bool { viewModel.isUIHidden || viewModel.isFullscreen }
 
+    // 動画の外側にあるアプリ自身のUI(上下バーなど)をクリックした瞬間に、動画側の
+    // コントロール(再生/一時停止/シークバーなど)を即座に隠す。simultaneousGestureを使うのは、
+    // Button/Slider/TextFieldなど子の操作を横取りせず、それらのタップと同時に検知するため
+    private var hideVideoControlsOnTap: some Gesture {
+        TapGesture().onEnded { viewModel.pointerLeftVideoSubject.send() }
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
@@ -15,6 +23,7 @@ struct ContentView: View {
                     topBar
                         .background(DragHandle())
                         .opacity(viewModel.uiOpacity)
+                        .simultaneousGesture(hideVideoControlsOnTap)
 
                     Divider().opacity(0.3 * viewModel.uiOpacity)
                 }
@@ -38,6 +47,7 @@ struct ContentView: View {
 
                     bottomBar
                         .opacity(viewModel.uiOpacity)
+                        .simultaneousGesture(hideVideoControlsOnTap)
                 }
             }
             // バーごとに背景を分けず、1枚のマテリアルにして段差をなくす
@@ -107,6 +117,7 @@ struct ContentView: View {
                     Button("再生") { viewModel.loadYouTube() }
                 }
                 .padding(.horizontal, 8)
+                .simultaneousGesture(hideVideoControlsOnTap)
 
                 HStack {
                     TextField("YouTube Data APIキー(チャプター取得用・任意)", text: $viewModel.apiKey)
@@ -114,6 +125,7 @@ struct ContentView: View {
                         .font(.caption)
                 }
                 .padding(.horizontal, 8)
+                .simultaneousGesture(hideVideoControlsOnTap)
             }
 
             // 動画が選択されていない間は、WKWebView側がYouTubeホーム画面(ログイン状態を保持)を
